@@ -1,0 +1,51 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+
+# IDEs / editors
+.vscode/
+.idea/
+*.code-workspace
+
+# Python packaging / build
+build/
+dist/
+*.egg-info/
+
+# Tests / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Type check / cache
+.mypy_cache/
+.cache/
+
+# Docs site
+site/
+docs/site/
+
+# Logs
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+*~
+
+# Docker overrides
+docker-compose.override.yml
+
+# Misc
+Pipfile.lock
