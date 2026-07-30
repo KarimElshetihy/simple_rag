@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     FILE_DEFAULT_CHUNK_SIZE: int
 
     class Config:
-        env_file = "src\.env"
+        env_file = "src/.env"
 
 def get_settings():
     return Settings()

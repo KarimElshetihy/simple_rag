@@ -1,10 +1,11 @@
 from fastapi import FastAPI, APIRouter, Depends, UploadFile, status
 from fastapi.responses import JSONResponse
 from ..helpers.config import Settings, get_settings
-from ..controllers import DataController, ProjectController
+from ..controllers import DataController, ProjectController, ProcessController
 import os
 import aiofiles
-
+from ..routes.schemas.ProcessSchemas import ProcessRequest
+from ..enums import ResponseSignal as responseSignal
 data_router = APIRouter(
     prefix="/api/v1/data",
     tags=["data"],
@@ -46,3 +47,45 @@ async def upload_file(project_id: str, file: UploadFile, app_settings: Settings 
                 "file_size": file.size,
             }
         )
+
+
+@data_router.post("/process_file/{project_id}")
+async def process_file(project_id: str, process_request: ProcessRequest):
+
+    file_id = process_request.file_id
+    chunk_size = process_request.chunk_size
+    overlap_size = process_request.overlap_size
+    process_controller = ProcessController(project_id=project_id)
+    file_content = process_controller.get_file_content(file_id=file_id)
+
+    chunks = process_controller.process_file_content(
+        file_content=file_content,
+        file_id=file_id,
+        chunk_size=chunk_size,
+        overlap_size=overlap_size
+    )
+
+    if chunks is None or len(chunks) == 0:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "message": responseSignal.FILE_PROCESSING_FAILED.value
+            }
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "message": responseSignal.PROCESSING_SUCCESS.value,
+            "total_chunks": len(chunks),
+            "chunks": 
+            [
+                {
+                    "chunk_id": idx + 1,
+                    "chunk_content": chunk.page_content,
+                    "chunk_metadata": chunk.metadata
+                }
+                for idx, chunk in enumerate(chunks)
+            ]
+        }
+    )
