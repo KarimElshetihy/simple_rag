@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from src.routes import base, data
 from motor.motor_asyncio import AsyncIOMotorClient
 from contextlib import asynccontextmanager
-from helpers.config import get_settings
+from src.helpers.config import get_settings
 
 
 # ------------ LIFESPAN EVENT HANDLER ------------ #
@@ -12,6 +12,7 @@ async def lifespan(app: FastAPI):
     setting = get_settings()
     app.state.mongo_client = AsyncIOMotorClient(setting.MONGODB_URI)
     app.state.db = app.state.mongo_client[setting.MONGODB_DB_NAME]
+    
 
     # Optional: Analogous to "create_all", you can build indexes here on startup
     # await app.state.db["users"].create_index([("email", 1)], unique=True)

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     MONGODB_URI: str
     MONGODB_DB_NAME: str
 
+    MONGO_INITDB_ROOT_USERNAME: str
+    MONGO_INITDB_ROOT_PASSWORD: str
+
     class Config:
         env_file = "src/.env"
 

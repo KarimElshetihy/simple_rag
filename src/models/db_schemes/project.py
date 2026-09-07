@@ -9,7 +9,7 @@ class Project(BaseModel):
 
     @field_validator("project_id")
     def validate(cls, value):
-        if not value.isalnun():
+        if not value.isalnum():
             raise ValueError("project_id must be alphanumeric")
         return value
 
