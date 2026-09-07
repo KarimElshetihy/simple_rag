@@ -1,18 +1,25 @@
+import logging
 from fastapi import FastAPI, APIRouter, Depends, UploadFile, status
 from fastapi.responses import JSONResponse
 from ..helpers.config import Settings, get_settings
 from ..controllers import DataController, ProjectController, ProcessController
 import os
 import aiofiles
-from ..routes.schemas.ProcessSchemas import ProcessRequest
+from ..schemas.ProcessSchemas import ProcessRequest
 from ..enums import ResponseSignal as responseSignal
+
+logger = logging.getLogger("uvicorn.error")
+
 data_router = APIRouter(
     prefix="/api/v1/data",
     tags=["data"],
 )
 
+
 @data_router.post("/upload_file/{project_id}")
-async def upload_file(project_id: str, file: UploadFile, app_settings: Settings = Depends(get_settings)):
+async def upload_file(
+    project_id: str, file: UploadFile, app_settings: Settings = Depends(get_settings)
+):
 
     data_controller = DataController()
     project_controller = ProjectController()
@@ -22,9 +29,7 @@ async def upload_file(project_id: str, file: UploadFile, app_settings: Settings 
     if not is_valid:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "message": validation_message
-            }
+            content={"message": validation_message},
         )
 
     else:
@@ -33,10 +38,11 @@ async def upload_file(project_id: str, file: UploadFile, app_settings: Settings 
         new_file_path, unique_file_name = data_controller.generate_unique_file_path(
             orig_file_name=file.filename,
             project_id=project_id,
-
         )
 
-        upload_message = await data_controller.upload_file_to_path(file=file, file_path=new_file_path)
+        upload_message = await data_controller.upload_file_to_path(
+            file=file, file_path=new_file_path
+        )
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -45,7 +51,7 @@ async def upload_file(project_id: str, file: UploadFile, app_settings: Settings 
                 "Upload Message": upload_message,
                 "file_name": file.filename,
                 "file_size": file.size,
-            }
+            },
         )
 
 
@@ -62,15 +68,13 @@ async def process_file(project_id: str, process_request: ProcessRequest):
         file_content=file_content,
         file_id=file_id,
         chunk_size=chunk_size,
-        overlap_size=overlap_size
+        overlap_size=overlap_size,
     )
 
     if chunks is None or len(chunks) == 0:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "message": responseSignal.FILE_PROCESSING_FAILED.value
-            }
+            content={"message": responseSignal.FILE_PROCESSING_FAILED.value},
         )
 
     return JSONResponse(
@@ -78,14 +82,13 @@ async def process_file(project_id: str, process_request: ProcessRequest):
         content={
             "message": responseSignal.PROCESSING_SUCCESS.value,
             "total_chunks": len(chunks),
-            "chunks": 
-            [
+            "chunks": [
                 {
                     "chunk_id": idx + 1,
                     "chunk_content": chunk.page_content,
-                    "chunk_metadata": chunk.metadata
+                    "chunk_metadata": chunk.metadata,
                 }
                 for idx, chunk in enumerate(chunks)
-            ]
-        }
+            ],
+        },
     )
