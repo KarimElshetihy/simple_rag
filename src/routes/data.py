@@ -27,7 +27,7 @@ async def upload_file(
     app_settings: Settings = Depends(get_settings),
 ):
 
-    project_model = ProjectModel(db_client=request.app.state.db)
+    project_model = await ProjectModel.creaate_instance(db_client=request.app.state.db)
     project = await project_model.get_project_or_create(project_id=project_id)
 
     data_controller = DataController()
@@ -76,7 +76,7 @@ async def process_file(
     process_controller = ProcessController(project_id=project_id)
     file_content = process_controller.get_file_content(file_id=file_id)
 
-    project_model = ProjectModel(db_client=request.app.state.db)
+    project_model = await ProjectModel.creaate_instance(db_client=request.app.state.db)
     project = await project_model.get_project_or_create(project_id=project_id)
     process_controller = ProcessController(project_id=project_id)
     file_content = process_controller.get_file_content(file_id=file_id)
@@ -104,7 +104,7 @@ async def process_file(
         for i, chunk in enumerate(chunks)
     ]
 
-    chunk_model = ChunkModel(db_client=request.app.state.db)
+    chunk_model = await ChunkModel.creaate_instance(db_client=request.app.state.db)
 
     if do_reset == 1:
         _ = await chunk_model.delete_chunks_by_project_id(project_id=project.id)
