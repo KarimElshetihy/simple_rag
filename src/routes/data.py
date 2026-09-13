@@ -9,7 +9,10 @@ from ..schemas.ProcessSchemas import ProcessRequest
 from ..enums import ResponseSignal as responseSignal
 from ..models.ProjectModel import ProjectModel
 from ..models.ChunkModel import ChunkModel
+from ..models.AssetModel import AssetModel
 from ..models.db_schemes import Chunk
+from ..models.db_schemes import Asset
+from ..enums.AssetEnums import AssetTypeEnum
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -27,7 +30,7 @@ async def upload_file(
     app_settings: Settings = Depends(get_settings),
 ):
 
-    project_model = await ProjectModel.creaate_instance(db_client=request.app.state.db)
+    project_model = await ProjectModel.create_instance(db_client=request.app.state.db)
     project = await project_model.get_project_or_create(project_id=project_id)
 
     data_controller = DataController()
@@ -41,27 +44,44 @@ async def upload_file(
             content={"message": validation_message},
         )
 
-    else:
-        project_path = project_controller.get_project_path(project_id=project_id)
+    
+    project_path = project_controller.get_project_path(project_id=project_id)
 
-        new_file_path, unique_file_name = data_controller.generate_unique_file_path(
-            orig_file_name=file.filename,
-            project_id=project_id,
-        )
+    new_file_path, unique_file_name = data_controller.generate_unique_file_path(
+        orig_file_name=file.filename,
+        project_id=project_id,
+    )
 
-        upload_message = await data_controller.upload_file_to_path(
-            file=file, file_path=new_file_path
-        )
+    upload_message = await data_controller.upload_file_to_path(
+        file=file, file_path=new_file_path
+    )
 
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "Validation Message": validation_message,
-                "Upload Message": upload_message,
-                "file_name": file.filename,
-                "file_size": file.size,
-            },
-        )
+    asset_model = await AssetModel.create_instance(db_client=request.app.state.db)
+
+    asset_resource = Asset(
+        asset_project_id=project.id,
+        asset_type=AssetTypeEnum.FILE.value,
+        asset_name=file.filename,
+        asset_size=file.size,
+        asset_path=new_file_path,
+        asset_original_name=file.filename
+    )
+
+    asset_record = await asset_model.create_asset(asset=asset_resource)
+
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "Validation Message": validation_message,
+            "Upload Message": upload_message,
+            "file_name": file.filename,
+            "file_size": file.size,
+            "asset":asset_record.asset_name,
+            "asset_type":asset_record.asset_type,
+            # "asset_project":asset_record.asset_project_id
+        },
+    )
 
 
 @data_router.post("/process_file/{project_id}")
@@ -76,7 +96,7 @@ async def process_file(
     process_controller = ProcessController(project_id=project_id)
     file_content = process_controller.get_file_content(file_id=file_id)
 
-    project_model = await ProjectModel.creaate_instance(db_client=request.app.state.db)
+    project_model = await ProjectModel.create_instance(db_client=request.app.state.db)
     project = await project_model.get_project_or_create(project_id=project_id)
     process_controller = ProcessController(project_id=project_id)
     file_content = process_controller.get_file_content(file_id=file_id)
@@ -104,7 +124,7 @@ async def process_file(
         for i, chunk in enumerate(chunks)
     ]
 
-    chunk_model = await ChunkModel.creaate_instance(db_client=request.app.state.db)
+    chunk_model = await ChunkModel.create_instance(db_client=request.app.state.db)
 
     if do_reset == 1:
         _ = await chunk_model.delete_chunks_by_project_id(project_id=project.id)

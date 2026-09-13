@@ -23,7 +23,7 @@ class ChunkModel(BaseDataModel):
                     )
         
     @classmethod
-    async def creaate_instance(cls, db_client: object):
+    async def create_instance(cls, db_client: object):
         instance = cls(db_client=db_client)
         await instance.init_collection()
         return instance
@@ -32,7 +32,7 @@ class ChunkModel(BaseDataModel):
         result = await self.collection.insert_one(
             chunk.model_dump(by_alias=True, exclude_unset=True)
         )
-        chunk._id = result.inserted_id
+        chunk.id = result.inserted_id
 
         return chunk
 

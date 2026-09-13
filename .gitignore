@@ -49,3 +49,6 @@ docker-compose.override.yml
 
 # Misc
 Pipfile.lock
+
+# Folders
+uploaded_files
