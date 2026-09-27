@@ -18,8 +18,8 @@ class OpenAIProvider(LLMInterface):
         self.output_max_tokens = output_max_tokens
         self.temperature = temperature
         self.client = OpenAI(api_key=self.api_key, api_url=self.api_url)
-        self.generation_model = "gpt-4"
-        self.embedding_model = "text-embedding-3-small"
+        # self.generation_model = "gpt-4"
+        # self.embedding_model = "text-embedding-3-small"
 
         self.generation_model_id = None
         self.embedding_model_id = None
