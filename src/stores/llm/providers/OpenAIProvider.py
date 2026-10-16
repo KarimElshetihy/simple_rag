@@ -1,5 +1,5 @@
-from enums.LLMEnums import OpenAIEnums
-from llm.LLMInterface import LLMInterface
+from src.enums.LLMEnums import OpenAIEnums
+from src.stores.llm.LLMInterface import LLMInterface
 from openai import OpenAI
 import logging
 
@@ -11,13 +11,14 @@ class OpenAIProvider(LLMInterface):
                  output_max_tokens: int = 1000,
                  temperature: float = 0.1
                  ):
-        
+
+        self.enums = OpenAIEnums
         self.api_key = api_key
         self.api_url = api_url
         self.input_max_characters = input_max_characters
         self.output_max_tokens = output_max_tokens
         self.temperature = temperature
-        self.client = OpenAI(api_key=self.api_key, api_url=self.api_url)
+        self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
         # self.generation_model = "gpt-4"
         # self.embedding_model = "text-embedding-3-small"
 
@@ -29,7 +30,7 @@ class OpenAIProvider(LLMInterface):
         self.logger = logging.getLogger(__name__)
 
     def set_generation_model(self, model_id: str):
-        self.generation_model = model_id    
+        self.generation_model_id = model_id
 
     def set_embedding_model(self, model_id: str, embedding_size: int):
         self.embedding_model_id = model_id
@@ -69,7 +70,7 @@ class OpenAIProvider(LLMInterface):
             self.logger.error("Error while generating text with OpenAI")
             return None
 
-        return response.choices[0].message["content"]
+        return response.choices[0].message.content
 
     
     def embed_text(self, text: str, document_type: str = None):

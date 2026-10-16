@@ -1,5 +1,5 @@
-from enums.LLMEnums import CoHereEnums, DocmentTypeEnums
-from llm.LLMInterface import LLMInterface
+from src.enums.LLMEnums import CoHereEnums, DocumentTypeEnums
+from src.stores.llm.LLMInterface import LLMInterface
 import cohere
 import logging
 
@@ -10,7 +10,8 @@ class CoHereProvider(LLMInterface):
                  output_max_tokens: int = 1000,
                  temperature: float = 0.1
                  ):
-        
+
+        self.enums = CoHereEnums
         self.api_key = api_key
         self.input_max_characters = input_max_characters
         self.output_max_tokens = output_max_tokens
@@ -27,7 +28,7 @@ class CoHereProvider(LLMInterface):
         self.logger = logging.getLogger(__name__)
 
     def set_generation_model(self, model_id: str):
-        self.generation_model = model_id    
+        self.generation_model_id = model_id   
 
     def set_embedding_model(self, model_id: str, embedding_size: int):
         self.embedding_model_id = model_id
@@ -78,7 +79,7 @@ class CoHereProvider(LLMInterface):
             self.logger.error("Embedding model for CoHere was not set")
             return None
 
-        if document_type == DocmentTypeEnums.QUERY.value:
+        if document_type == DocumentTypeEnums.QUERY.value:
             input_type = CoHereEnums.QUERY.value
         input_type = CoHereEnums.DOCUMENT.value
 

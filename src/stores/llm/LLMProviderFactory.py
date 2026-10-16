@@ -1,7 +1,7 @@
-from enums.LLMEnums import LLMEnums
-from providers.CoHereProvider import CoHereProvider
-from providers.OpenAIProvider import OpenAIProvider
-from helpers.config import Settings
+from src.enums.LLMEnums import LLMEnums
+from .providers.CoHereProvider import CoHereProvider
+from .providers.OpenAIProvider import OpenAIProvider
+from src.helpers.config import Settings
 
 class LLMProviderFactory:
     def __init__(self, config: dict):
