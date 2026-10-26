@@ -30,6 +30,7 @@ async def index_vector(request: Request, project_id: str, push_request: PushRequ
         vector_db_client=request.app.vector_db_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
+        template_parser=request.app.template_parser
     )
 
     has_records = True
@@ -96,6 +97,7 @@ async def get_project_index_info(request: Request, project_id: str):
         vector_db_client=request.app.vector_db_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
+        template_parser=request.app.template_parser
     )
 
     collection_info = vec_controller.get_vector_db_collection_info(project=project)

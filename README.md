@@ -80,3 +80,32 @@ flowchart TD
 
 ## License
 See LICENSE in the repository root.
+
+---
+
+The project structure for this *mini-RAG* application (Retrieval-Augmented Generation) is designed to modularize core components like LLM providers, vector databases, and prompt management. Below is a flowchart representing the high-level architecture:
+
+```mermaid
+graph TD
+User[User Query] --> Controller[NLP Controller]
+Controller --> Template[Template Parser]
+Template --> Localization[Localization Module: Arabic/English]
+Localization --> TemplateFiles[Prompt Templates]
+
+
+Controller --> VectorDB[Vector Database: Qdrant]
+VectorDB --> Search[Search Module]
+
+Search --> LLM[LLM Provider: OpenAI/Cohere]
+TemplateFiles --> LLM
+
+LLM --> Response[Final Answer]
+```
+
+### Key Components Breakdown:
+
+*   **NLP Controller:** Acts as the central orchestrator that receives the user query and coordinates between the template parser and the vector database.
+*   **Template Parser:** Manages localized system, document, and footer prompts based on the selected language configuration.
+*   **Vector Database (Qdrant):** Responsible for storing and searching text chunks. The search module retrieves relevant context based on the user's input.
+*   **LLM Provider:** An abstracted layer (supporting OpenAI or Cohere) that takes the retrieved document chunks and the formatted prompt to generate an answer.
+*   **Localization:** A system that dynamically switches between Arabic and English templates (stored in `localized` folders) based on the application configuration.

@@ -17,4 +17,9 @@ class Chunk(BaseModel):
     @classmethod
     def get_index(cls):
         return [{"key": [("chunk_project_id", 1)], "unique": False, "name": "chunk_project_index"}]
+    
+
+class RetrievedDocument(BaseModel):
+    text: str
+    score: float
 

@@ -116,12 +116,12 @@ class VectorsController(BaseController):
         documents_prompts = "\n".join([
             self.template_parser.get("rag", "document_prompt", {
                     "doc_num": idx + 1,
-                    "chunk_text": doc.payload.get("text", ""),
+                    "chunk_text": doc.text,
             })
             for idx, doc in enumerate(retrieved_documents)
         ])
 
-        footer_prompt = self.template_parser.get("rag", "footer_prompt")
+        footer_prompt = self.template_parser.get("rag", "footer_prompt", {"query": query})
 
         # step3: Construct Generation Client Prompts
         chat_history = [
