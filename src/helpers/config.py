@@ -10,11 +10,18 @@ class Settings(BaseSettings):
     FILE_MAX_SIZE: int
     FILE_DEFAULT_CHUNK_SIZE: int
 
-    MONGODB_URI: str
-    MONGODB_DB_NAME: str
+    # MONGODB_URI: str
+    # MONGODB_DB_NAME: str
 
-    MONGO_INITDB_ROOT_USERNAME: str
-    MONGO_INITDB_ROOT_PASSWORD: str
+    # MONGO_INITDB_ROOT_USERNAME: str
+    # MONGO_INITDB_ROOT_PASSWORD: str
+
+    POSTGRES_URI: str
+    POSTGRES_HOST: str
+    POSTGRES_PORT: int
+    POSTGRES_DB_NAME: str
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
 
     # ===================== LLM Configs ===================== #
     GENERATION_BACKEND: str

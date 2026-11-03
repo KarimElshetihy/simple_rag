@@ -1,19 +1,20 @@
 from fastapi import FastAPI
 from src.routes import base, data, vectors
-from motor.motor_asyncio import AsyncIOMotorClient
 from contextlib import asynccontextmanager
 from src.helpers.config import get_settings
 from src.stores.llm.LLMProviderFactory import LLMProviderFactory
 from src.stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 from src.stores.llm.templates.template_parser import TemplateParser
+from sqlalchemy.ext.asyncio import create_async_engine
 
 # ------------ LIFESPAN EVENT HANDLER ------------ #
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. On Startup: Initialize the Motor client
     settings = get_settings()
-    app.state.mongo_client = AsyncIOMotorClient(settings.MONGODB_URI)
-    app.state.db = app.state.mongo_client[settings.MONGODB_DB_NAME]
+
+    # Initialize PostgreSQL engine
+    app.state.db_engine = create_async_engine(settings.POSTGRES_URI, echo=True)
     llm_factory = LLMProviderFactory(settings)
     vector_db_factory = VectorDBProviderFactory(settings)
 
@@ -40,7 +41,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # 2. On Shutdown: Close the Motor client connection cleanly
-    app.state.mongo_client.close()
+    await app.state.db_engine.dispose()
     app.vector_db_client.disconnect()
 
 
