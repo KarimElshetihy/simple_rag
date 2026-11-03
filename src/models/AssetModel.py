@@ -1,49 +1,34 @@
-from .db_schemes import Asset
-from .BaseDataModel import BaseDataModel
-from ..enums.Database_Enums import DatabaseEnum
-from bson import ObjectId
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .db_schemes.db_rag.schemes.asset import Asset
 
 
-class AssetModel(BaseDataModel):
-    def __init__(self, db_client: object):
-        super().__init__(db_client=db_client)
-        self.collection = self.db_client[DatabaseEnum.COLLECTION_ASSET_NAME.value]
-
-    async def init_collection(self):
-        db_collections = await self.db_client.list_collection_names()
-        if DatabaseEnum.COLLECTION_ASSET_NAME.value not in db_collections:
-            await self.db_client.create_collection(DatabaseEnum.COLLECTION_ASSET_NAME.value)
-            for index in Asset.get_index():
-                await self.collection.create_index(
-                    index["key"], 
-                    unique=index["unique"], 
-                    name=index["name"]
-                )
-
-    @classmethod
-    async def create_instance(cls, db_client: object):
-        instance = cls(db_client=db_client)
-        await instance.init_collection()
-        return instance
+class AssetModel:
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
     async def create_asset(self, asset: Asset):
-        result = await self.collection.insert_one(asset.model_dump(by_alias=True, exclude_unset=True))
-        asset.id = result.inserted_id
+        self.session.add(asset)
+        await self.session.flush()
         return asset
 
-    async def get_all_project_assets(self, asset_project_id: str, asset_type: str):
-        assets =  await self.collection.find({"asset_project_id": ObjectId(asset_project_id), 
-                                           "asset_type": asset_type}).to_list(length=None)
+    async def get_all_project_assets(self, asset_project_id: int, asset_type: str):
+        result = await self.session.execute(
+            select(Asset)
+            .where(
+                Asset.asset_project_id == asset_project_id,
+                Asset.asset_type == asset_type,
+            )
+            .order_by(Asset.asset_id)
+        )
+        return list(result.scalars().all())
 
-        return [Asset(**record) for record in assets]
-
-    async def get_asset_record(self, asset_project_id: str, asset_name: str):
-        record = await self.collection.find_one({
-            "asset_project_id": ObjectId(asset_project_id), 
-            "asset_name": asset_name
-        })
-
-        if not record:
-            return None
-
-        return Asset(**record)
+    async def get_asset_record(self, asset_project_id: int, asset_name: str):
+        result = await self.session.execute(
+            select(Asset).where(
+                Asset.asset_project_id == asset_project_id,
+                Asset.asset_name == asset_name,
+            )
+        )
+        return result.scalar_one_or_none()

@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from ..enums.Database_Enums import BackendDBEnum
 
 class Settings(BaseSettings):
     APP_NAME: str
@@ -10,18 +10,19 @@ class Settings(BaseSettings):
     FILE_MAX_SIZE: int
     FILE_DEFAULT_CHUNK_SIZE: int
 
-    # MONGODB_URI: str
-    # MONGODB_DB_NAME: str
+    DATABASE_BACKEND: BackendDBEnum = BackendDBEnum.POSTGRES
+    MONGODB_URI: str | None = None
+    MONGODB_DB_NAME: str | None = None
 
-    # MONGO_INITDB_ROOT_USERNAME: str
-    # MONGO_INITDB_ROOT_PASSWORD: str
+    MONGO_INITDB_ROOT_USERNAME: str | None = None
+    MONGO_INITDB_ROOT_PASSWORD: str | None = None
 
-    POSTGRES_URI: str
-    POSTGRES_HOST: str
-    POSTGRES_PORT: int
-    POSTGRES_DB_NAME: str
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
+    POSTGRES_URI: str | None = None
+    POSTGRES_HOST: str | None = None
+    POSTGRES_PORT: int | None = None
+    POSTGRES_DB_NAME: str | None = None
+    POSTGRES_USER: str | None = None
+    POSTGRES_PASSWORD: str | None = None
 
     # ===================== LLM Configs ===================== #
     GENERATION_BACKEND: str

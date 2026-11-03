@@ -1,20 +1,25 @@
-from fastapi import FastAPI, APIRouter, Depends, UploadFile, status, Request
+from fastapi import APIRouter, Depends, status, Request
 from fastapi.responses import JSONResponse
-import logging
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..helpers.db import get_db_session
 from ..models.ProjectModel import ProjectModel
 from ..schemas.VectorsSchema import PushRequest, SearchRequest
 from ..controllers.VectorsController import VectorsController
 from ..enums import ResponseSignal
 from ..models.ChunkModel import ChunkModel
 
-logger = logging.getLogger("uvicorn.error")
-
 vectors_router = APIRouter(
     prefix="/api/v1/vectors",tags=["vectors"],)
 
 @vectors_router.post("/index_vector/{project_id}")
-async def index_vector(request: Request, project_id: str, push_request: PushRequest):
-    project_model = await ProjectModel.create_instance(db_client=request.app.state.db)
+async def index_vector(
+    request: Request,
+    project_id: str,
+    push_request: PushRequest,
+    session: AsyncSession = Depends(get_db_session),
+):
+    project_model = ProjectModel(session)
 
     project = await project_model.get_project_or_create(project_id=project_id)
 
@@ -38,7 +43,7 @@ async def index_vector(request: Request, project_id: str, push_request: PushRequ
     inserted_items_count = 0
     idx = 0
 
-    chunk_model = await ChunkModel.create_instance(db_client=request.app.state.db)
+    chunk_model = ChunkModel(session)
 
     while has_records:
         page_chunks = await chunk_model.get_poject_chunks(
@@ -83,11 +88,13 @@ async def index_vector(request: Request, project_id: str, push_request: PushRequ
     )
 
 @vectors_router.get("/index/info/{project_id}")
-async def get_project_index_info(request: Request, project_id: str):
+async def get_project_index_info(
+    request: Request,
+    project_id: str,
+    session: AsyncSession = Depends(get_db_session),
+):
     
-    project_model = await ProjectModel.create_instance(
-        db_client=request.app.state.db
-    )
+    project_model = ProjectModel(session)
 
     project = await project_model.get_project_or_create(
         project_id=project_id
@@ -110,11 +117,14 @@ async def get_project_index_info(request: Request, project_id: str):
     )
 
 @vectors_router.post("/index/search/{project_id}")
-async def search_index(request: Request, project_id: str, search_request: SearchRequest):
+async def search_index(
+    request: Request,
+    project_id: str,
+    search_request: SearchRequest,
+    session: AsyncSession = Depends(get_db_session),
+):
     
-    project_model = await ProjectModel.create_instance(
-        db_client=request.app.state.db
-    )
+    project_model = ProjectModel(session)
 
     project = await project_model.get_project_or_create(
         project_id=project_id
@@ -147,11 +157,14 @@ async def search_index(request: Request, project_id: str, search_request: Search
     )
 
 @vectors_router.post("/index/answer/{project_id}")
-async def answer_rag(request: Request, project_id: str, search_request: SearchRequest):
+async def answer_rag(
+    request: Request,
+    project_id: str,
+    search_request: SearchRequest,
+    session: AsyncSession = Depends(get_db_session),
+):
     
-    project_model = await ProjectModel.create_instance(
-        db_client=request.app.state.db
-    )
+    project_model = ProjectModel(session)
 
     project = await project_model.get_project_or_create(
         project_id=project_id

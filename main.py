@@ -5,16 +5,27 @@ from src.helpers.config import get_settings
 from src.stores.llm.LLMProviderFactory import LLMProviderFactory
 from src.stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 from src.stores.llm.templates.template_parser import TemplateParser
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from src.enums.Database_Enums import BackendDBEnum
 
 # ------------ LIFESPAN EVENT HANDLER ------------ #
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. On Startup: Initialize the Motor client
     settings = get_settings()
 
-    # Initialize PostgreSQL engine
+    if settings.DATABASE_BACKEND != BackendDBEnum.POSTGRES:
+        raise ValueError(
+            f"{settings.DATABASE_BACKEND.value} is not configured; "
+            "this application currently supports PostgreSQL only."
+        )
+    if not settings.POSTGRES_URI:
+        raise ValueError("POSTGRES_URI must be configured for PostgreSQL.")
+
     app.state.db_engine = create_async_engine(settings.POSTGRES_URI, echo=True)
+    app.state.session_factory = async_sessionmaker(
+        app.state.db_engine,
+        expire_on_commit=False,
+    )
     llm_factory = LLMProviderFactory(settings)
     vector_db_factory = VectorDBProviderFactory(settings)
 
@@ -35,14 +46,11 @@ async def lifespan(app: FastAPI):
         default_language=settings.DEFAULT_LANG,
     )
 
-    # Optional: Analogous to "create_all", you can build indexes here on startup
-    # await app.state.db["users"].create_index([("email", 1)], unique=True)
-
-    yield
-
-    # 2. On Shutdown: Close the Motor client connection cleanly
-    await app.state.db_engine.dispose()
-    app.vector_db_client.disconnect()
+    try:
+        yield
+    finally:
+        await app.state.db_engine.dispose()
+        app.vector_db_client.disconnect()
 
 
 app = FastAPI(lifespan=lifespan)

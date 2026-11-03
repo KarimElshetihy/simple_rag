@@ -3,8 +3,8 @@ from .ProjectController import ProjectController
 from ..enums import ResponseSignal, ProcessEnum
 from ..enums.LLMEnums import DocumentTypeEnums
 from fastapi import UploadFile
-from ..models.db_schemes.project import Project
-from ..models.db_schemes.chunk import Chunk
+from ..models.db_schemes.db_rag.schemes.project import Project
+from ..models.db_schemes.db_rag.schemes.chunk import AssetChunk as Chunk
 import re
 import os
 import aiofiles

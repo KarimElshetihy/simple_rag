@@ -1,93 +1,58 @@
-from .db_schemes import Chunk
-from .BaseDataModel import BaseDataModel
-from ..enums.Database_Enums import DatabaseEnum
-from bson.objectid import ObjectId
-from pymongo import InsertOne
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .db_schemes.db_rag.schemes.chunk import AssetChunk
 
 
-class ChunkModel(BaseDataModel):
-    def __init__(self, db_client: object):
-        super().__init__(db_client=db_client)
+class ChunkModel:
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
-        self.collection = self.db_client[DatabaseEnum.COLLECTION_CHUNK_NAME.value]
-
-    async def init_collection(self):
-            db_collections = await self.db_client.list_collection_names()
-            if DatabaseEnum.COLLECTION_CHUNK_NAME.value not in db_collections:
-                await self.db_client.create_collection(DatabaseEnum.COLLECTION_CHUNK_NAME.value)
-                for index in Chunk.get_index():
-                    await self.collection.create_index(
-                        index["key"], 
-                        unique=index["unique"], 
-                        name=index["name"]
-                    )
-        
-    @classmethod
-    async def create_instance(cls, db_client: object):
-        instance = cls(db_client=db_client)
-        await instance.init_collection()
-        return instance
-    
-    async def create_chunk(self, chunk: Chunk):
-        result = await self.collection.insert_one(
-            chunk.model_dump(by_alias=True, exclude_unset=True)
-        )
-        chunk.id = result.inserted_id
-
+    async def create_chunk(self, chunk: AssetChunk):
+        self.session.add(chunk)
+        await self.session.flush()
         return chunk
 
-    async def get_chunk(self, chunk_id: str):
-        record = await self.collection.find_one({"_id": ObjectId})
-
-        if record is None:
-            return None
-
-        return Chunk(**record)
+    async def get_chunk(self, chunk_id: int):
+        return await self.session.get(AssetChunk, chunk_id)
 
     async def insert_many_chunks(self, chunks: list, batch_size: int = 100):
-
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i : i + batch_size]
-
-            operations = [
-                InsertOne(chunk.model_dump(by_alias=True, exclude_unset=True))
-                for chunk in batch
-            ]
-
-            await self.collection.bulk_write(operations)
+            self.session.add_all(batch)
+            await self.session.flush()
 
         return len(chunks)
 
-    async def delete_chunks_by_project_id(self, project_id: ObjectId):
-        result = await self.collection.delete_many({"chunk_project_id": project_id})
-
-        return result.deleted_count
+    async def delete_chunks_by_project_id(self, project_id: int):
+        result = await self.session.execute(
+            delete(AssetChunk).where(AssetChunk.chunk_project_id == project_id)
+        )
+        return result.rowcount
 
     async def get_all_chunks(self, page: int = 1, page_size: int = 20):
-        # Count total number of documents
-        total_documents = await self.collection.count_documents({})
-
-        # Calculate total number of pages
-        total_pages = total_documents // page_size
-        if total_documents % page_size > 0:
-            total_pages += 1
-
-        cursor = self.collection.find().skip((page - 1) * page_size).limit(page_size)
-
-        chunks = []
-        async for document in cursor:
-            chunks.append(Chunk(**document))
+        total_documents = await self.session.scalar(
+            select(func.count()).select_from(AssetChunk)
+        )
+        total_pages = (total_documents + page_size - 1) // page_size
+        result = await self.session.execute(
+            select(AssetChunk)
+            .order_by(AssetChunk.chunk_id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        chunks = list(result.scalars().all())
 
         return chunks, total_pages
 
-    async def get_poject_chunks(self, project_id: ObjectId, page_no: int=1, page_size: int=50):
-        records = await self.collection.find({
-                    "chunk_project_id": project_id
-                }).skip(
-                    (page_no-1) * page_size
-                ).limit(page_size).to_list(length=None)
-
-        return [
-            Chunk(**record)
-            for record in records
-        ]
+    async def get_poject_chunks(
+        self, project_id: int, page_no: int = 1, page_size: int = 50
+    ):
+        result = await self.session.execute(
+            select(AssetChunk)
+            .where(AssetChunk.chunk_project_id == project_id)
+            .order_by(AssetChunk.chunk_id)
+            .offset((page_no - 1) * page_size)
+            .limit(page_size)
+        )
+        return list(result.scalars().all())
