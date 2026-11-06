@@ -4,21 +4,75 @@ A minimal Retrieval-Augmented Generation (RAG)-style assistant for local documen
 
 ## Features
 - Upload and validate documents (`.txt`, `.pdf`)
-- Simple routing → controller validation flow
+- FastAPI routes delegate workflows to application services
 - Config-driven file size limits
 - Easy to extend with indexing/storage backends
 
-## Repository layout
-- `src/routes/` — FastAPI HTTP endpoints
-- `src/application/services/` — upload registration, document processing, indexing, and RAG workflows
-- `src/infrastructure/database/repositories/` — SQLAlchemy query and persistence operations
-- `src/infrastructure/filesystem/` — runtime file and vector-store paths
-- `src/models/` — ORM table schemas and provider-neutral data models
-- `src/schemas/` — HTTP request and validation schemas
-- `src/helpers/` and `src/enums/` — configuration and shared constants
-- `docker/` — compose and container configuration
-- Runtime uploads and local vector-store data are stored under the configurable
-  `DATA_DIR` (default: repository-root `data/`), outside the source package.
+## Application tree
+
+```text
+simple-rag/
+├── main.py
+├── requirements.txt
+├── alembic.ini
+├── alembic/
+│   ├── env.py
+│   └── versions/
+├── docker/
+│   ├── docker-compose.yml
+│   └── .env.example
+├── src/
+│   ├── application/
+│   │   └── services/
+│   │       ├── data_service.py
+│   │       ├── document_processing_service.py
+│   │       └── rag_service.py
+│   ├── enums/
+│   ├── helpers/
+│   ├── infrastructure/
+│   │   ├── database/repositories/
+│   │   │   ├── asset_repository.py
+│   │   │   ├── chunk_repository.py
+│   │   │   └── project_repository.py
+│   │   └── filesystem/storage_paths.py
+│   ├── models/
+│   │   ├── db_schemes/
+│   │   └── vector_schemes.py
+│   ├── routes/
+│   ├── schemas/
+│   ├── stores/
+│   │   ├── llm/
+│   │   │   ├── providers/
+│   │   │   └── templates/locales/{ar,en}/
+│   │   └── vectordb/providers/
+│   ├── .env.example
+│   └── assets/sample_files/
+├── tests/
+└── data/                       # Runtime data; git-ignored
+    ├── uploaded_files/
+    └── vector_db/
+```
+
+Runtime uploads and local vector-store data are stored under the configurable
+`DATA_DIR` (default: repository-root `data/`), outside the source package.
+Existing files under `src/assets/` are not migrated automatically.
+
+## Structure and hierarchy
+
+| Layer / directory | Responsibility | Typical contents |
+|---|---|---|
+| `main.py` | Application entry point and lifespan wiring | FastAPI app, provider setup and shutdown |
+| `src/routes/` | HTTP boundary | Request parsing, service calls, response/status mapping |
+| `src/schemas/` | API input validation | Pydantic request schemas |
+| `src/application/services/` | Application workflows | Upload/registration, document processing, vector indexing and RAG |
+| `src/infrastructure/database/repositories/` | Database persistence | SQLAlchemy queries and writes for projects, assets and chunks |
+| `src/infrastructure/filesystem/` | Local storage support | Runtime upload and vector-store paths |
+| `src/stores/` | External service adapters | LLM and vector database interfaces, factories and providers |
+| `src/models/` | Data definitions | ORM table schemas and provider-neutral models |
+| `src/helpers/`, `src/enums/` | Shared application support | Configuration, database session dependency and enum values |
+| `alembic/` | Database schema migrations | Migration environment and version scripts |
+| `tests/` | Automated verification | Unit tests for settings, storage paths and application services |
+| `data/` | Runtime-only persistent files | Uploaded documents and local Qdrant data; excluded from Git |
 
 ## Quickstart (Windows)
 Run these commands from the repository root.
