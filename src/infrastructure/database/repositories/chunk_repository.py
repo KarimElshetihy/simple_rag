@@ -30,6 +30,15 @@ class ChunkRepository:
         )
         return result.rowcount
 
+    async def delete_chunks_by_asset_id(self, project_id: int, asset_id: int):
+        result = await self.session.execute(
+            delete(AssetChunk).where(
+                AssetChunk.chunk_project_id == project_id,
+                AssetChunk.chunk_asset_id == asset_id,
+            )
+        )
+        return result.rowcount
+
     async def get_all_chunks(self, page: int = 1, page_size: int = 20):
         total_documents = await self.session.scalar(
             select(func.count()).select_from(AssetChunk)

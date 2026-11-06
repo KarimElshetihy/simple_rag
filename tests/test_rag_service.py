@@ -64,6 +64,7 @@ class RagServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(upsert_kwargs["text_list"], [chunk.chunk_text for chunk in chunks])
         self.assertEqual(upsert_kwargs["chunk_ids"], [chunk.chunk_id for chunk in chunks])
         self.assertEqual(len(upsert_kwargs["vectors"]), len(chunks))
+        self.assertEqual(upsert_kwargs["batch_size"], 256)
 
     async def test_index_rejects_incomplete_embedding_batch_before_writing(self):
         self.embedding_client.results = [[[1.0]]]
@@ -122,7 +123,8 @@ class RagServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         first_page = [SimpleNamespace(chunk_id=1), SimpleNamespace(chunk_id=2)]
         chunk_repository = SimpleNamespace(
-            get_project_chunks=AsyncMock(side_effect=[first_page, []])
+            get_project_chunks=AsyncMock(side_effect=[first_page, []]),
+            session=SimpleNamespace(commit=AsyncMock()),
         )
         self.controller.index_into_vector_db = AsyncMock(return_value=True)
         self.controller.ensure_vector_index = AsyncMock(return_value=True)
@@ -145,6 +147,13 @@ class RagServiceTests(unittest.IsolatedAsyncioTestCase):
             [call.kwargs["page_no"] for call in chunk_repository.get_project_chunks.await_args_list],
             [1, 2],
         )
+        self.assertTrue(
+            all(
+                call.kwargs["page_size"] == 256
+                for call in chunk_repository.get_project_chunks.await_args_list
+            )
+        )
+        self.assertEqual(chunk_repository.session.commit.await_count, 2)
         self.controller.ensure_vector_index.assert_awaited_once_with(
             project=project,
             collection_name="staging-test",
@@ -165,7 +174,8 @@ class RagServiceTests(unittest.IsolatedAsyncioTestCase):
         chunk_repository = SimpleNamespace(
             get_project_chunks=AsyncMock(
                 return_value=[SimpleNamespace(chunk_id=1)]
-            )
+            ),
+            session=SimpleNamespace(commit=AsyncMock()),
         )
         self.controller.index_into_vector_db = AsyncMock(return_value=False)
         self.controller.create_staging_collection_name = lambda: "staging-test"

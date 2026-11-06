@@ -7,6 +7,7 @@ import re
 import os
 import aiofiles
 from dataclasses import dataclass
+from uuid import uuid4
 
 from src.enums.asset_enums import AssetTypeEnum
 from src.infrastructure.database.repositories import (
@@ -55,6 +56,9 @@ class DataService:
         cleaned_file_name = cleaned_file_name.replace(" ", "_")
 
         return cleaned_file_name
+
+    def generate_key(self) -> str:
+        return uuid4().hex
 
     def generate_unique_file_path(self, orig_file_name: str, project_id: str):
 

@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from time import perf_counter
 from uuid import uuid4
 
 from src.enums.llm_enums import DocumentTypeEnums
@@ -23,6 +24,8 @@ class VectorIndexResult:
 
 class RagService:
     EMBEDDING_BATCH_SIZE = 64
+    INDEX_PAGE_SIZE = 256
+    VECTOR_UPSERT_BATCH_SIZE = 256
 
     def __init__(self, vector_db_client, generation_client, embedding_client, template_parser):
         self.vector_db_client = vector_db_client
@@ -59,14 +62,22 @@ class RagService:
         )
         collection_published = False
         inserted_items_count = 0
+        read_seconds = 0.0
+        index_seconds = 0.0
+        publish_seconds = 0.0
 
         try:
             page_no = 1
             while True:
+                read_started = perf_counter()
                 page_chunks = await chunk_repository.get_project_chunks(
                     project_id=project.id,
                     page_no=page_no,
+                    page_size=self.INDEX_PAGE_SIZE,
                 )
+                read_seconds += perf_counter() - read_started
+                # Release the chunk-table read lock before vector DB operations.
+                await chunk_repository.session.commit()
                 if not page_chunks:
                     break
 
@@ -84,17 +95,30 @@ class RagService:
                 page_no += 1
 
             if inserted_items_count:
+                index_started = perf_counter()
                 await self.ensure_vector_index(
                     project=project,
                     collection_name=target_collection,
                 )
+                index_seconds = perf_counter() - index_started
                 if staging_collection:
+                    publish_started = perf_counter()
                     await self.publish_staging_collection(
                         staging_collection=staging_collection,
                         project=project,
                     )
+                    publish_seconds = perf_counter() - publish_started
                     collection_published = True
 
+            logger.info(
+                "Indexed %s chunks for project %s: chunk reads %.3fs, "
+                "vector index build %.3fs, publish %.3fs.",
+                inserted_items_count,
+                project_id,
+                read_seconds,
+                index_seconds,
+                publish_seconds,
+            )
             return VectorIndexResult(
                 signal=ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS,
                 inserted_items_count=inserted_items_count,
@@ -165,6 +189,7 @@ class RagService:
         metadata = [chunk.chunk_metadata for chunk in chunks]
         chunk_ids = [chunk.chunk_id for chunk in chunks]
         vectors = []
+        embedding_started = perf_counter()
         for start in range(0, len(texts), self.EMBEDDING_BATCH_SIZE):
             batch_vectors = await self.embedding_client.embed_texts(
                 texts=texts[start : start + self.EMBEDDING_BATCH_SIZE],
@@ -182,20 +207,32 @@ class RagService:
                     "Embedding provider failed to embed an indexed batch."
                 )
             vectors.extend(batch_vectors)
+        embedding_seconds = perf_counter() - embedding_started
 
         await self.vector_db_client.create_collection(
             collection_name=collection_name,
             embedding_size=self.embedding_client.embedding_size,
         )
 
-        return await self.vector_db_client.upsert_vectors(
+        upsert_started = perf_counter()
+        result = await self.vector_db_client.upsert_vectors(
             collection_name=collection_name,
             text_list=texts,
             metadata=metadata,
             vectors=vectors,
             record_ids=chunk_ids,
             chunk_ids=chunk_ids,
+            batch_size=self.VECTOR_UPSERT_BATCH_SIZE,
         )
+        logger.info(
+            "Indexed vector batch of %s chunks for project %s: "
+            "embedding %.3fs, database upsert %.3fs.",
+            len(texts),
+            project.project_id,
+            embedding_seconds,
+            perf_counter() - upsert_started,
+        )
+        return result
 
     async def search_vector_db_collection(
         self, project: Project, text: str, limit: int = 5

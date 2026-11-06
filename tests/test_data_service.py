@@ -64,6 +64,30 @@ class DataServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.asset_repository.create_asset.assert_awaited_once()
 
+    def test_generate_unique_file_path_retries_on_collision(self):
+        del self.service.generate_unique_file_path
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project_path = Path(temporary_directory)
+            (project_path / "first_document.txt").touch()
+            self.service.storage_paths = SimpleNamespace(
+                get_project_path=lambda project_id: str(project_path)
+            )
+
+            with patch(
+                "src.application.services.data_service.uuid4",
+                side_effect=[
+                    SimpleNamespace(hex="first"),
+                    SimpleNamespace(hex="second"),
+                ],
+            ):
+                file_path, unique_file_name = self.service.generate_unique_file_path(
+                    orig_file_name="document.txt",
+                    project_id="project-1",
+                )
+
+        self.assertEqual(unique_file_name, "second_document.txt")
+        self.assertEqual(Path(file_path), project_path / unique_file_name)
+
     async def test_registration_failure_removes_the_uploaded_file(self):
         upload_file = SimpleNamespace(filename="document.txt", size=12)
         self.asset_repository.create_asset.side_effect = RuntimeError("db failure")
