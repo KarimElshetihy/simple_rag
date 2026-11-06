@@ -147,6 +147,66 @@ class PGVectorDBProvider(VectorDBInterface):
         async with engine.begin() as connection:
             await connection.execute(sqltext(f"DROP TABLE IF EXISTS {table_name}"))
 
+    async def publish_collection(
+        self, staging_collection: str, collection_name: str
+    ) -> None:
+        if staging_collection == collection_name:
+            raise ValueError("The staging and published collection names must differ.")
+        if not await self.is_collection_exist(staging_collection):
+            raise ValueError(f"Staging collection does not exist: {staging_collection}")
+
+        staging_table = self._table_name(staging_collection)
+        published_table = self._table_name(collection_name)
+        engine = self._require_engine()
+        preparer = engine.dialect.identifier_preparer
+        quoted_staging_table = preparer.quote(staging_table)
+        quoted_published_table = preparer.quote(published_table)
+        staging_index_prefix, _ = self._vector_index_names(
+            staging_collection, self.index_type
+        )
+        published_index_prefix, _ = self._vector_index_names(
+            collection_name, self.index_type
+        )
+
+        async with engine.begin() as connection:
+            await connection.execute(
+                sqltext(f"DROP TABLE IF EXISTS {quoted_published_table}")
+            )
+            await connection.execute(
+                sqltext(
+                    f"ALTER TABLE {quoted_staging_table} "
+                    f"RENAME TO {quoted_published_table}"
+                )
+            )
+            index_names = (
+                await connection.execute(
+                    sqltext(
+                        "SELECT indexname FROM pg_indexes "
+                        "WHERE schemaname = current_schema() "
+                        "AND tablename = :table_name"
+                    ),
+                    {"table_name": published_table},
+                )
+            ).scalars().all()
+            for existing_name in index_names:
+                if existing_name.startswith(staging_index_prefix):
+                    suffix = existing_name[len(staging_index_prefix) :]
+                    published_name = f"{published_index_prefix}{suffix}"
+                    if len(published_name.encode("utf-8")) > 63:
+                        raise ValueError("Published vector index name is too long.")
+                    await connection.execute(
+                        sqltext(
+                            f"ALTER INDEX {preparer.quote(existing_name)} "
+                            f"RENAME TO {preparer.quote(published_name)}"
+                        )
+                    )
+
+        self.logger.info(
+            "Published staging collection %s as %s.",
+            staging_collection,
+            collection_name,
+        )
+
     async def create_collection(
         self, collection_name: str, embedding_size: int, do_reset: bool = False
     ):

@@ -18,18 +18,31 @@ A minimal Retrieval-Augmented Generation (RAG)-style assistant for local documen
 - docker — compose and container configs
 
 ## Quickstart (Windows)
-1. Create and activate venv
+Run these commands from the repository root.
+
+1. Create and activate a virtual environment
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
 ```
 2. Install dependencies
 ```powershell
-pip install -r src/requirements.txt
+pip install -r requirements.txt
 ```
-3. Run dev server
+3. Configure the application
 ```powershell
-uvicorn src.main:app --reload
+Copy-Item src\.env.example src\.env
+```
+Edit `src/.env` and set your PostgreSQL connection string and OpenAI API key.
+The database must exist and have PostgreSQL with the pgvector extension
+available. Ensure `alembic.ini` points to the same database, then create the
+application tables:
+```powershell
+alembic upgrade head
+```
+4. Run the development server
+```powershell
+uvicorn main:app --reload
 ```
 
 ## API
@@ -121,6 +134,12 @@ Pgvector collections use HNSW by default. The application creates the ANN index
 after all chunks in an indexing request have been inserted, so the initial
 bulk load does not pay the index-maintenance cost for every row. Later inserts
 keep the existing index up to date; it is not rebuilt on every request.
+
+When `do_reset` is enabled for vector indexing, the replacement is built in a
+staging collection. The old collection remains available until all chunks are
+inserted and index setup completes. PostgreSQL publishes the replacement in a
+transaction; Qdrant switches an alias to the completed collection. Failed
+rebuilds remove the staging collection and leave the current collection active.
 
 Set `PGVECTOR_INDEX_TYPE` to `hnsw` or `ivfflat` to choose the configured index
 type. The next successful indexing request creates the configured index before

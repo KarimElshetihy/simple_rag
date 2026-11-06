@@ -1,4 +1,5 @@
 import logging
+from hashlib import sha256
 from uuid import uuid4
 
 from qdrant_client import AsyncQdrantClient, models
@@ -26,6 +27,23 @@ class QdrantDB(VectorDBInterface):
             raise RuntimeError("The Qdrant provider is not connected.")
         return self.client
 
+    @staticmethod
+    def _active_alias_name(collection_name: str) -> str:
+        return f"active_{sha256(collection_name.encode()).hexdigest()}"
+
+    async def _get_active_alias_target(self, collection_name: str) -> str | None:
+        alias_name = self._active_alias_name(collection_name)
+        aliases = await self._require_client().get_aliases()
+        for alias in aliases.aliases:
+            if alias.alias_name == alias_name:
+                return alias.collection_name
+        return None
+
+    async def _collection_reference(self, collection_name: str) -> str:
+        if await self._get_active_alias_target(collection_name):
+            return self._active_alias_name(collection_name)
+        return collection_name
+
     async def connect(self) -> None:
         self.client = AsyncQdrantClient(path=self.db_path)
         self.logger.info("Connected to Qdrant at %s", self.db_path)
@@ -37,8 +55,11 @@ class QdrantDB(VectorDBInterface):
             self.logger.info("Disconnected from Qdrant at %s", self.db_path)
 
     async def is_collection_exist(self, collection_name: str) -> bool:
-        return await self._require_client().collection_exists(
-            collection_name=collection_name
+        return (
+            await self._get_active_alias_target(collection_name) is not None
+            or await self._require_client().collection_exists(
+                collection_name=collection_name
+            )
         )
 
     async def list_all_collections(self) -> list[str]:
@@ -46,16 +67,84 @@ class QdrantDB(VectorDBInterface):
         return [collection.name for collection in collections.collections]
 
     async def get_collection_info(self, collection_name: str) -> dict:
+        collection_reference = await self._collection_reference(collection_name)
         info = await self._require_client().get_collection(
-            collection_name=collection_name
+            collection_name=collection_reference
         )
         return info.model_dump()
 
     async def delete_collection(self, collection_name: str) -> None:
-        if await self.is_collection_exist(collection_name):
-            await self._require_client().delete_collection(
-                collection_name=collection_name
+        client = self._require_client()
+        alias_name = self._active_alias_name(collection_name)
+        active_target = await self._get_active_alias_target(collection_name)
+        if active_target is not None:
+            await client.update_collection_aliases(
+                change_aliases_operations=[
+                    models.DeleteAliasOperation(
+                        delete_alias=models.DeleteAlias(alias_name=alias_name)
+                    )
+                ]
             )
+            await client.delete_collection(collection_name=active_target)
+        if await client.collection_exists(collection_name=collection_name):
+            await client.delete_collection(collection_name=collection_name)
+
+    async def ensure_vector_index(self, collection_name: str) -> bool:
+        if not await self.is_collection_exist(collection_name):
+            raise ValueError(f"Collection does not exist: {collection_name}")
+        return False
+
+    async def publish_collection(
+        self, staging_collection: str, collection_name: str
+    ) -> None:
+        if staging_collection == collection_name:
+            raise ValueError("The staging and published collection names must differ.")
+
+        client = self._require_client()
+        if not await client.collection_exists(collection_name=staging_collection):
+            raise ValueError(f"Staging collection does not exist: {staging_collection}")
+
+        alias_name = self._active_alias_name(collection_name)
+        previous_target = await self._get_active_alias_target(collection_name)
+        operations = []
+        if previous_target is not None:
+            operations.append(
+                models.DeleteAliasOperation(
+                    delete_alias=models.DeleteAlias(alias_name=alias_name)
+                )
+            )
+        operations.append(
+            models.CreateAliasOperation(
+                create_alias=models.CreateAlias(
+                    collection_name=staging_collection,
+                    alias_name=alias_name,
+                )
+            )
+        )
+        await client.update_collection_aliases(
+            change_aliases_operations=operations
+        )
+
+        retired_collections = {previous_target, collection_name} - {
+            None,
+            staging_collection,
+        }
+        for retired_collection in retired_collections:
+            try:
+                if await client.collection_exists(collection_name=retired_collection):
+                    await client.delete_collection(collection_name=retired_collection)
+            except Exception:
+                self.logger.exception(
+                    "Published collection %s, but failed to remove old collection %s.",
+                    collection_name,
+                    retired_collection,
+                )
+
+        self.logger.info(
+            "Published staging collection %s as %s.",
+            staging_collection,
+            collection_name,
+        )
 
     async def create_collection(
         self, collection_name: str, embedding_size: int, do_reset: bool = False
@@ -151,9 +240,10 @@ class QdrantDB(VectorDBInterface):
             for index, vector in enumerate(vectors)
         ]
         client = self._require_client()
+        collection_reference = await self._collection_reference(collection_name)
         for start in range(0, len(points), batch_size):
             await client.upsert(
-                collection_name=collection_name,
+                collection_name=collection_reference,
                 points=points[start : start + batch_size],
             )
         return True
@@ -163,8 +253,9 @@ class QdrantDB(VectorDBInterface):
     ) -> list[RetrievedDocument]:
         if limit <= 0:
             raise ValueError("Search limit must be greater than zero.")
+        collection_reference = await self._collection_reference(collection_name)
         results = await self._require_client().query_points(
-            collection_name=collection_name,
+            collection_name=collection_reference,
             query=vector,
             limit=limit,
             with_payload=True,

@@ -1,4 +1,5 @@
 import asyncio
+from uuid import uuid4
 
 from .BaseController import BaseController
 from ..enums.LLMEnums import DocumentTypeEnums
@@ -17,6 +18,9 @@ class VectorsController(BaseController):
     def create_collection_name(self, project_id: str):
         return f"collection_{project_id}".strip()
 
+    def create_staging_collection_name(self):
+        return f"staging_{uuid4().hex}"
+
     async def reset_vector_db_collection(self, project: Project):
         collection_name = self.create_collection_name(project_id=project.project_id)
         return await self.vector_db_client.delete_collection(
@@ -29,16 +33,35 @@ class VectorsController(BaseController):
             collection_name=collection_name
         )
 
-    async def ensure_vector_index(self, project: Project):
-        collection_name = self.create_collection_name(project_id=project.project_id)
+    async def ensure_vector_index(
+        self, project: Project, collection_name: str | None = None
+    ):
+        collection_name = collection_name or self.create_collection_name(
+            project_id=project.project_id
+        )
         return await self.vector_db_client.ensure_vector_index(
             collection_name=collection_name
         )
 
-    async def index_into_vector_db(
-        self, project: Project, chunks: list[Chunk], do_reset: bool = False
-    ) -> bool:
+    async def publish_vector_collection(
+        self, staging_collection: str, project: Project
+    ):
         collection_name = self.create_collection_name(project_id=project.project_id)
+        return await self.vector_db_client.publish_collection(
+            staging_collection=staging_collection,
+            collection_name=collection_name,
+        )
+
+    async def index_into_vector_db(
+        self,
+        project: Project,
+        chunks: list[Chunk],
+        do_reset: bool = False,
+        collection_name: str | None = None,
+    ) -> bool:
+        collection_name = collection_name or self.create_collection_name(
+            project_id=project.project_id
+        )
         texts = [chunk.chunk_text for chunk in chunks]
         metadata = [chunk.chunk_metadata for chunk in chunks]
         chunk_ids = [chunk.chunk_id for chunk in chunks]

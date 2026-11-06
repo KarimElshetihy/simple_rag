@@ -31,6 +31,12 @@ class VectorDBInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def publish_collection(
+        self, staging_collection: str, collection_name: str
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def create_collection(
         self,
         collection_name: str,
@@ -73,5 +79,6 @@ class VectorDBInterface(ABC):
     ) -> list[RetrievedDocument]:
         raise NotImplementedError
 
+    @abstractmethod
     async def ensure_vector_index(self, collection_name: str) -> bool:
-        return False
+        raise NotImplementedError
