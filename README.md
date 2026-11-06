@@ -154,6 +154,31 @@ flowchart TD
 - Consider adding a script (e.g., `scripts/generate_docs.py`) to extract endpoints and docstrings into `docs/`.
 - For automatic docs updates on repo changes, use a CI job that runs the generator and commits updated docs.
 
+## Planned features
+
+The following conversational RAG capabilities are planned and are not
+implemented yet:
+
+- Persist conversations and their user/assistant messages in PostgreSQL.
+- Add a `conversation_id` to answer requests. Create a conversation when one is
+  not supplied, and return its ID so clients can continue it.
+- Load only recent turns for a conversation, with a configurable history/token
+  limit; consider summarizing older turns when the limit is reached.
+- Retrieve relevant documents again for each new user message, and combine the
+  results with the bounded conversation history and current question.
+- Store a language preference per conversation. Allow clients to select it,
+  otherwise detect the user's language and update it when they clearly switch.
+- Select the prompt language per request/conversation rather than mutating the
+  shared startup `TemplateParser`, so concurrent conversations remain isolated.
+- Add tests for multi-turn follow-ups, language changes, history limits, and
+  conversation isolation.
+- RAG quality evaluation — Create a small set of representative questions and expected source documents; measure retrieval relevance and answer quality as the system changes.
+- Citations in answers — Return source titles or links with answers, and make it clear when the retrieved documents don’t support a confident answer.
+- Authentication and project access controls — Ensure users can only search and manage documents belonging to projects they’re authorized to access.
+- Ingestion status and recovery — Track document processing states and surface failures so users can tell whether a file was indexed successfully and retry when needed.
+- Integration tests — Cover API routes and repository behavior, including tests against PostgreSQL/pgvector and Qdrant where practical.
+- Operational visibility — Add structured logs and metrics for ingestion failures, retrieval latency, and LLM errors, while avoiding sensitive content in logs.
+
 ## Async PostgreSQL connections and sessions
 
 The pgvector provider uses SQLAlchemy's `AsyncEngine` and asyncpg driver. The
