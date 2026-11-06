@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from ..enums.Database_Enums import BackendDBEnum
+from ..enums.VectorDBEnums import PGVectorIndexTypeEnums
+from typing import List
 
 class Settings(BaseSettings):
     APP_NAME: str
@@ -40,9 +42,11 @@ class Settings(BaseSettings):
     OUTPUT_MAX_TOKENS: int = None
     TEMPERATURE: float = None
 
+    VECTOR_DB_BACKEND_LITERAL: List[str] = None
     VECTOR_DB_BACKEND: str = None
     VECTOR_DB_PATH: str = None
     VECTOR_DB_DISTANCE_METRIC: str = None
+    PGVECTOR_INDEX_TYPE: str = PGVectorIndexTypeEnums.HNSW.value
 
     PRIMARY_LANG: str = "en"
     DEFAULT_LANG: str = "en"

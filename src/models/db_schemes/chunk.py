@@ -22,4 +22,4 @@ class Chunk(BaseModel):
 class RetrievedDocument(BaseModel):
     text: str
     score: float
-
+    chunk_id: Optional[int] = None

@@ -74,6 +74,84 @@ flowchart TD
 - Consider adding a script (e.g., `scripts/generate_docs.py`) to extract endpoints and docstrings into `docs/`.
 - For automatic docs updates on repo changes, use a CI job that runs the generator and commits updated docs.
 
+## Async PostgreSQL connections and sessions
+
+The pgvector provider uses SQLAlchemy's `AsyncEngine` and asyncpg driver. The
+engine is created once when the provider connects and maintains a connection
+pool. Each provider operation uses `async with engine.connect()` for reads or
+`async with engine.begin()` for writes. These context managers check out a
+connection from the pool and return it when the operation finishes; they do not
+necessarily establish a new network connection on every call. `engine.begin()`
+also commits on success and rolls back if an exception occurs.
+
+An alternative is to use `async with session_factory() as session`, where the
+factory creates SQLAlchemy `AsyncSession` objects. Choose a session when working
+with ORM models, tracking changes, or coordinating several ORM operations in a
+unit of work. A session can also execute raw SQL, but that ORM-oriented
+functionality is unnecessary for the pgvector provider's SQLAlchemy Core
+queries. For those queries, using the engine directly is simpler. Use
+`async with session.begin()` when a session-based group of operations needs an
+explicit transaction.
+
+Do not share one `AsyncSession` across concurrent requests or keep a session
+open for the lifetime of the provider. Sessions are mutable and should be
+created for a request or unit of work. Keeping the `AsyncEngine` on the provider
+is appropriate because it manages the pool.
+
+The pgvector provider's methods are asynchronous, so callers must await them
+(for example, `await provider.search_by_vector(...)`). The application lifecycle
+and vector controller use asynchronous APIs for both pgvector and Qdrant.
+Embedding and text-generation requests are asynchronous as well.
+
+## Pgvector chunk references
+
+When indexing with pgvector, each vector row stores the source `asset_chunks`
+database `chunk_id` in a separate, unique column. Search results include that
+`chunk_id` alongside the text and similarity score, allowing the result to be
+looked up in the chunk table. A foreign key references
+`asset_chunks.chunk_id`; deleting a source chunk cascades to its vector record.
+
+The foreign key is created when a new collection is created; existing
+collections are not altered automatically. Drop and recreate an older
+collection (then reindex it) to add the `chunk_id` column and foreign key.
+
+## Pgvector ANN indexes
+
+Pgvector collections use HNSW by default. The application creates the ANN index
+after all chunks in an indexing request have been inserted, so the initial
+bulk load does not pay the index-maintenance cost for every row. Later inserts
+keep the existing index up to date; it is not rebuilt on every request.
+
+Set `PGVECTOR_INDEX_TYPE` to `hnsw` or `ivfflat` to choose the configured index
+type. The next successful indexing request creates the configured index before
+dropping the previous index managed by this provider. This makes the change
+explicit and avoids dropping the old index if creation of the replacement
+fails. IVFFlat's `lists` value is estimated from the collection's row count;
+HNSW uses pgvector's defaults.
+
+The index operator class follows `VECTOR_DB_DISTANCE_METRIC` (cosine or dot
+product). Index type changes can take time and use additional storage while the
+replacement builds, so benchmark against representative queries and schedule
+large changes appropriately. The current implementation uses regular
+transactional `CREATE INDEX`, not `CREATE INDEX CONCURRENTLY`.
+
+## Arabic and English chunking
+
+Document processing uses a recursive, structure-aware splitter. It prefers
+paragraph and line breaks, then Arabic sentence punctuation (`؟`, `؛`, `۔`),
+English sentence endings, commas, and finally spaces or character boundaries.
+This keeps sentence and word boundaries when possible, while still respecting
+the requested maximum chunk size. Loader metadata is preserved, and each
+resulting chunk records its source start offset.
+
+`chunk_size` and `overlap_size` are measured in **characters**, not tokens.
+Defaults are 1,000 characters with 150 characters of overlap. These are starting
+values rather than universal optima: benchmark retrieval quality on the actual
+Arabic and English documents and embedding model. The project does not
+currently configure a model-specific tokenizer, so token counts are not
+guaranteed by these limits. Requests reject non-positive sizes, overlap greater
+than or equal to the chunk size, and sizes above 8,192 characters.
+
 ## Contributing
 - Add tests for new endpoints and validation logic.
 - Update this README.md when adding new API behavior or config options.

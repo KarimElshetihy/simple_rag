@@ -1,48 +1,77 @@
 from abc import ABC, abstractmethod
-from typing import List
+
 from src.models.db_schemes.chunk import RetrievedDocument
 
+
 class VectorDBInterface(ABC):
+    """Asynchronous contract shared by vector database providers."""
 
     @abstractmethod
-    def connect(self):
-        pass
+    async def connect(self) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def disconnect(self):
-        pass
-    
-    @abstractmethod
-    def is_collection_exist(self, collection_name: str) -> bool:
-        pass
+    async def disconnect(self) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def list_all_collections(self) -> List:
-        pass
-    
+    async def is_collection_exist(self, collection_name: str) -> bool:
+        raise NotImplementedError
 
     @abstractmethod
-    def get_collection_info(self, collection_name: str) -> dict:
-        pass
+    async def list_all_collections(self) -> list[str]:
+        raise NotImplementedError
 
     @abstractmethod
-    def delete_collection(self, collection_name: str):
-        pass
+    async def get_collection_info(self, collection_name: str) -> dict:
+        raise NotImplementedError
 
     @abstractmethod
-    def create_collection(self, collection_name: str, embedding_size: int, do_reset: bool = False):
-        pass
-    
-    @abstractmethod
-    def insert_vector(self, collection_name: str, text: str, vector: list, metadata: dict = None, record_id: str = None):
-        pass
+    async def delete_collection(self, collection_name: str) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def insert_many_vectors(self, collection_name: str, text_list: list, vectors: list, metadata: list = None, record_ids: list = None, batch_size: int = 50):
-        pass
+    async def create_collection(
+        self,
+        collection_name: str,
+        embedding_size: int,
+        do_reset: bool = False,
+    ) -> bool:
+        raise NotImplementedError
 
     @abstractmethod
-    def search_by_vector(self, collection_name: str, vector: list, limit: int) -> List[RetrievedDocument]:
-        pass
-    
-        
+    async def insert_vector(
+        self,
+        collection_name: str,
+        text: str,
+        vector: list[float],
+        metadata: dict | None = None,
+        record_id: str | int | None = None,
+        **provider_options,
+    ) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def insert_many_vectors(
+        self,
+        collection_name: str,
+        text_list: list[str],
+        vectors: list[list[float]],
+        metadata: list[dict | None] | None = None,
+        record_ids: list[str | int | None] | None = None,
+        batch_size: int = 50,
+        **provider_options,
+    ) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def search_by_vector(
+        self,
+        collection_name: str,
+        vector: list[float],
+        limit: int = 5,
+    ) -> list[RetrievedDocument]:
+        raise NotImplementedError
+
+    async def ensure_vector_index(self, collection_name: str) -> bool:
+        return False

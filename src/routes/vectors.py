@@ -41,7 +41,6 @@ async def index_vector(
     has_records = True
     page_no = 1
     inserted_items_count = 0
-    idx = 0
 
     chunk_model = ChunkModel(session)
 
@@ -58,16 +57,12 @@ async def index_vector(
             has_records = False
             break
 
-        chunks_ids =  list(range(idx, idx + len(page_chunks)))
-        idx += len(page_chunks)
-        
         reset_collection = bool(push_request.do_reset) and inserted_items_count == 0
 
-        is_inserted = vec_controller.index_into_vector_db(
+        is_inserted = await vec_controller.index_into_vector_db(
             project=project,
             chunks=page_chunks,
             do_reset=reset_collection,
-            chunks_ids=chunks_ids,
         )
 
         if not is_inserted:
@@ -79,6 +74,9 @@ async def index_vector(
             )
         
         inserted_items_count += len(page_chunks)
+
+    if inserted_items_count:
+        await vec_controller.ensure_vector_index(project=project)
         
     return JSONResponse(
         content={
@@ -107,7 +105,9 @@ async def get_project_index_info(
         template_parser=request.app.template_parser
     )
 
-    collection_info = vec_controller.get_vector_db_collection_info(project=project)
+    collection_info = await vec_controller.get_vector_db_collection_info(
+        project=project
+    )
 
     return JSONResponse(
         content={
@@ -137,7 +137,7 @@ async def search_index(
         template_parser=request.app.template_parser,
     )
 
-    results = vec_controller.search_vector_db_collection(
+    results = await vec_controller.search_vector_db_collection(
         project=project, text=search_request.text, limit=search_request.limit
     )
 
@@ -152,7 +152,7 @@ async def search_index(
     return JSONResponse(
         content={
             "signal": ResponseSignal.VECTORDB_SEARCH_SUCCESS.value,
-            "results": [ result.dict()  for result in results ]
+            "results": [result.dict(exclude_none=True) for result in results]
         }
     )
 
@@ -177,7 +177,7 @@ async def answer_rag(
         template_parser=request.app.template_parser,
     )
 
-    answer, full_prompt, chat_history = vec_controller.answer_rag_question(
+    answer, full_prompt, chat_history = await vec_controller.answer_rag_question(
         project=project,
         query=search_request.text,
         limit=search_request.limit,

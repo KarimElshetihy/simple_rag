@@ -139,7 +139,11 @@ async def process_file(
         file_content = process_controller.get_file_content(file_id=file_id)
 
         if not file_content:
-            logger.error(f"Error while processing the file: {file_id}")
+            logger.error("Error while processing the file: %s", file_id)
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"message": responseSignal.PROCESSING_FAILED.value},
+            )
         
         chunks = process_controller.process_file_content(
             file_content=file_content,
@@ -151,7 +155,7 @@ async def process_file(
         if chunks is None or len(chunks) == 0:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                content={"message": responseSignal.FILE_PROCESSING_FAILED.value},
+                content={"message": responseSignal.PROCESSING_FAILED.value},
             )
 
         file_chunks_records = [

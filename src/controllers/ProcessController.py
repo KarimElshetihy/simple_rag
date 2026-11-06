@@ -46,14 +46,31 @@ class ProcessController(BaseController):
         self,
         file_content: list,
         file_id: str,
-        chunk_size: int = 100,
-        overlap_size: int = 20,
+        chunk_size: int = 1000,
+        overlap_size: int = 150,
     ):
+        if chunk_size <= 0 or chunk_size > 8192:
+            raise ValueError("Chunk size must be between 1 and 8192 characters.")
+        if overlap_size < 0 or overlap_size >= chunk_size:
+            raise ValueError(
+                "Chunk overlap must be non-negative and smaller than chunk size."
+            )
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=overlap_size,
             length_function=len,
+            separators=[
+                "\n\n",
+                "\n",
+                r"(?<=[؟؛۔])(?=\s|$)",
+                r"(?<=[.!?])(?=\s|$)",
+                r"(?<=[،,])(?=\s|$)",
+                r"\s+",
+                "",
+            ],
+            is_separator_regex=True,
+            add_start_index=True,
         )
 
         file_content_texts = [rec.page_content for rec in file_content]

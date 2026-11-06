@@ -1,6 +1,6 @@
 from src.enums.LLMEnums import OpenAIEnums
 from src.stores.llm.LLMInterface import LLMInterface
-from openai import OpenAI
+from openai import AsyncOpenAI
 import logging
 
 class OpenAIProvider(LLMInterface):
@@ -18,7 +18,7 @@ class OpenAIProvider(LLMInterface):
         self.input_max_characters = input_max_characters
         self.output_max_tokens = output_max_tokens
         self.temperature = temperature
-        self.client = OpenAI(api_key=self.api_key, base_url=self.api_url)
+        self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.api_url)
         # self.generation_model = "gpt-4"
         # self.embedding_model = "text-embedding-3-small"
 
@@ -37,10 +37,10 @@ class OpenAIProvider(LLMInterface):
         self.embedding_size = embedding_size
 
     
-    def generate_text(
+    async def generate_text(
         self, 
         prompt: str,
-        chat_history: list=[],
+        chat_history: list = None,
         max_tokens: int = None,
         temperature: float = None,
         # **kwargs
@@ -56,12 +56,13 @@ class OpenAIProvider(LLMInterface):
         max_tokens = max_tokens or self.output_max_tokens
         temperature = temperature or self.temperature
 
-        chat_history.append(self.construct_prompt(prompt=prompt, role=OpenAIEnums.USER.value))
+        messages = list(chat_history or [])
+        messages.append(self.construct_prompt(prompt=prompt, role=OpenAIEnums.USER.value))
 
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=self.generation_model_id,
-            messages=chat_history,
+            messages=messages,
             max_tokens=max_tokens,
             temperature=temperature
         )
@@ -73,7 +74,7 @@ class OpenAIProvider(LLMInterface):
         return response.choices[0].message.content
 
     
-    def embed_text(self, text: str, document_type: str = None):
+    async def embed_text(self, text: str, document_type: str = None):
         if not self.client:
             self.logger.error("OpenAI client was not set")
             return None
@@ -82,7 +83,7 @@ class OpenAIProvider(LLMInterface):
             self.logger.error("Embedding model for OpenAI was not set")
             return None
 
-        response = self.client.embeddings.create(
+        response = await self.client.embeddings.create(
             model=self.embedding_model_id,
             input=text
         )
