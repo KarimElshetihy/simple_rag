@@ -73,7 +73,11 @@ class CoHereProvider(LLMInterface):
         return response.text
 
     
-    async def embed_text(self, text: str, document_type: str = None):
+    async def embed_texts(
+        self, texts: list[str], document_type: str = None
+    ) -> list[list[float]] | None:
+        if not texts:
+            return []
         if not self.client:
             self.logger.error("CoHere client was not set")
             return None
@@ -90,16 +94,24 @@ class CoHereProvider(LLMInterface):
 
         response = await self.client.embed(
             model=self.embedding_model_id,
-            texts=[self.process_text(text)],
+            texts=[self.process_text(text) for text in texts],
             input_type=input_type,
-            embedding_types=["float"]
+            embedding_types=["float"],
         )
 
-        if not response or not response.embeddings or not response.embeddings.float_:
+        if (
+            not response
+            or not response.embeddings
+            or not response.embeddings.float_
+        ):
             self.logger.error("Error while embedding text with CoHere")
             return None
 
-        return response.embeddings.float_[0]
+        vectors = response.embeddings.float_
+        if len(vectors) != len(texts) or any(not vector for vector in vectors):
+            self.logger.error("CoHere returned invalid embeddings for the batch")
+            return None
+        return vectors
     
     def construct_prompt(self, prompt: str, role: str):
         return {

@@ -1,4 +1,3 @@
-import asyncio
 from uuid import uuid4
 
 from .BaseController import BaseController
@@ -7,6 +6,8 @@ from ..models.db_schemes.db_rag.schemes.project import Project
 from ..models.db_schemes.db_rag.schemes.chunk import AssetChunk as Chunk
 
 class VectorsController(BaseController):
+    EMBEDDING_BATCH_SIZE = 64
+
     def __init__(self, vector_db_client, generation_client, embedding_client, template_parser):
         super().__init__()
 
@@ -65,17 +66,24 @@ class VectorsController(BaseController):
         texts = [chunk.chunk_text for chunk in chunks]
         metadata = [chunk.chunk_metadata for chunk in chunks]
         chunk_ids = [chunk.chunk_id for chunk in chunks]
-        vectors = await asyncio.gather(
-            *(
-                self.embedding_client.embed_text(
-                    text=text,
-                    document_type=DocumentTypeEnums.DOCUMENT.value,
-                )
-                for text in texts
+        vectors = []
+        for start in range(0, len(texts), self.EMBEDDING_BATCH_SIZE):
+            batch_vectors = await self.embedding_client.embed_texts(
+                texts=texts[start : start + self.EMBEDDING_BATCH_SIZE],
+                document_type=DocumentTypeEnums.DOCUMENT.value,
             )
-        )
-        if any(vector is None for vector in vectors):
-            raise RuntimeError("Embedding provider failed to embed an indexed chunk.")
+            expected_batch_size = min(
+                self.EMBEDDING_BATCH_SIZE, len(texts) - start
+            )
+            if (
+                batch_vectors is None
+                or len(batch_vectors) != expected_batch_size
+                or any(not vector for vector in batch_vectors)
+            ):
+                raise RuntimeError(
+                    "Embedding provider failed to embed an indexed batch."
+                )
+            vectors.extend(batch_vectors)
 
         await self.vector_db_client.create_collection(
             collection_name=collection_name,
@@ -97,17 +105,17 @@ class VectorsController(BaseController):
     ) -> list:
 
         collection_name = self.create_collection_name(project_id=project.project_id)
-        vector = await self.embedding_client.embed_text(
-            text=text,
+        vectors = await self.embedding_client.embed_texts(
+            texts=[text],
             document_type=DocumentTypeEnums.QUERY.value,
         )
 
-        if not vector or len(vector) == 0:
+        if vectors is None or len(vectors) != 1 or not vectors[0]:
             return []
 
         return await self.vector_db_client.search_by_vector(
             collection_name=collection_name,
-            vector=vector,
+            vector=vectors[0],
             limit=limit,
         )
     

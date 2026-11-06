@@ -79,7 +79,11 @@ class OpenAIProvider(LLMInterface):
         return response.choices[0].message.content
 
     
-    async def embed_text(self, text: str, document_type: str = None):
+    async def embed_texts(
+        self, texts: list[str], document_type: str = None
+    ) -> list[list[float]] | None:
+        if not texts:
+            return []
         if not self.client:
             self.logger.error("OpenAI client was not set")
             return None
@@ -90,14 +94,22 @@ class OpenAIProvider(LLMInterface):
 
         response = await self.client.embeddings.create(
             model=self.embedding_model_id,
-            input=text
+            input=texts,
         )
 
-        if not response or not response.data or not response.data[0].embedding:
+        if not response or not response.data:
             self.logger.error("Error while embedding text with OpenAI")
             return None
 
-        return response.data[0].embedding
+        indexed_embeddings = sorted(response.data, key=lambda item: item.index)
+        if [item.index for item in indexed_embeddings] != list(range(len(texts))):
+            self.logger.error("OpenAI returned an incomplete embedding batch")
+            return None
+        vectors = [item.embedding for item in indexed_embeddings]
+        if len(vectors) != len(texts) or any(not vector for vector in vectors):
+            self.logger.error("OpenAI returned invalid embeddings for the batch")
+            return None
+        return vectors
     
     def construct_prompt(self, prompt: str, role: str):
         return {

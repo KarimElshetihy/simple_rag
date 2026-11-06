@@ -2,7 +2,6 @@ from .db_rag_base import DB_BASE
 from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-from pydantic import BaseModel
 
 
 class AssetChunk(DB_BASE):
@@ -34,8 +33,3 @@ class AssetChunk(DB_BASE):
 
     project = relationship("Project", back_populates="chunks")
     asset = relationship("Asset", back_populates="chunks")
-
-
-class RetrievedDocument(BaseModel):
-    text: str
-    score: float

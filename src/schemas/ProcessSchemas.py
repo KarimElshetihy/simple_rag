@@ -7,7 +7,7 @@ class ProcessRequest(BaseModel):
     file_id: Optional[str] = None
     chunk_size: int = Field(default=1000, ge=1, le=8192)
     overlap_size: int = Field(default=150, ge=0, le=8191)
-    do_reset: int = 0
+    do_reset: bool = False
 
     @model_validator(mode="after")
     def validate_chunk_overlap(self):

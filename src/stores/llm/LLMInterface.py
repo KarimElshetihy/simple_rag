@@ -21,7 +21,9 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod
-    async def embed_text(self, text: str, document_type: str = None):
+    async def embed_texts(
+        self, texts: list[str], document_type: str = None
+    ) -> list[list[float]] | None:
         pass
 
     @abstractmethod

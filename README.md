@@ -56,6 +56,8 @@ curl -X POST "http://localhost:8000/api/v1/data/upload_file/1" \
 - Response: JSON with validation message and status.
 - Vector search and RAG answer requests require non-blank text up to 4,000
   characters. Their `limit` defaults to 5 and must be between 1 and 20.
+- The file processing and vector indexing requests use a boolean `do_reset`
+  field, defaulting to `false`.
 
 ## File upload notes / implementation hints
 - FastAPI expects form file fields for uploads:
@@ -122,6 +124,10 @@ The pgvector provider's methods are asynchronous, so callers must await them
 (for example, `await provider.search_by_vector(...)`). The application lifecycle
 and vector controller use asynchronous APIs for both pgvector and Qdrant.
 Embedding and text-generation requests are asynchronous as well.
+
+Document embedding uses each provider's batch API. Indexing sends at most 64
+texts per embedding request and preserves the input order when pairing vectors
+with chunks. Vector database writes are also batched by the provider.
 
 ## Pgvector chunk references
 

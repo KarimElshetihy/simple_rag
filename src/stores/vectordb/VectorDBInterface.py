@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from src.models.db_schemes.chunk import RetrievedDocument
+from src.models.vector_schemes import RetrievedDocument
 
 
 class VectorDBInterface(ABC):
@@ -53,7 +53,7 @@ class VectorDBInterface(ABC):
         vector: list[float],
         metadata: dict | None = None,
         record_id: str | int | None = None,
-        **provider_options,
+        chunk_id: int | None = None,
     ) -> bool:
         raise NotImplementedError
 
@@ -66,7 +66,7 @@ class VectorDBInterface(ABC):
         metadata: list[dict | None] | None = None,
         record_ids: list[str | int | None] | None = None,
         batch_size: int = 50,
-        **provider_options,
+        chunk_ids: list[int | None] | None = None,
     ) -> bool:
         raise NotImplementedError
 

@@ -174,7 +174,7 @@ async def process_file(
             for i, chunk in enumerate(chunks)
         )
 
-    if do_reset == 1:
+    if do_reset:
         await chunk_model.delete_chunks_by_project_id(project_id=project.id)
 
     no_records = await chunk_model.insert_many_chunks(chunks=file_chunks_records)

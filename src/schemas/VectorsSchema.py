@@ -1,9 +1,8 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
 
 
 class PushRequest(BaseModel):
-    do_reset: Optional[int] = 0
+    do_reset: bool = False
 
 
 class SearchRequest(BaseModel):

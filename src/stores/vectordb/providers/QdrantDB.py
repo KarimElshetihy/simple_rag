@@ -6,11 +6,11 @@ from qdrant_client import AsyncQdrantClient, models
 
 from ..VectorDBInterface import VectorDBInterface
 from src.enums.VectorDBEnums import DistanceMethodEnums
-from src.models.db_schemes.chunk import RetrievedDocument
+from src.models.vector_schemes import RetrievedDocument
 
 
 class QdrantDB(VectorDBInterface):
-    supports_chunk_ids = False
+    supports_chunk_ids = True
 
     def __init__(self, db_path: str, distance_method: str):
         self.client: AsyncQdrantClient | None = None

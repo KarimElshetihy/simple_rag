@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from typing import Optional
 from bson.objectid import ObjectId
 
@@ -17,9 +17,3 @@ class Chunk(BaseModel):
     @classmethod
     def get_index(cls):
         return [{"key": [("chunk_project_id", 1)], "unique": False, "name": "chunk_project_index"}]
-    
-
-class RetrievedDocument(BaseModel):
-    text: str
-    score: float
-    chunk_id: Optional[int] = None

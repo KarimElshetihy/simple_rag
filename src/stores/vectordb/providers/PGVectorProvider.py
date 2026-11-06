@@ -15,7 +15,7 @@ from src.enums.VectorDBEnums import (
     PGVectorIndexTypeEnums,
     PGVectorSchemaEnums,
 )
-from src.models.db_schemes.chunk import RetrievedDocument
+from src.models.vector_schemes import RetrievedDocument
 
 
 class PGVectorDBProvider(VectorDBInterface):
@@ -350,11 +350,11 @@ class PGVectorDBProvider(VectorDBInterface):
         self,
         collection_name: str,
         text: str,
-        vector: list,
-        metadata: dict = None,
-        record_id: str = None,
-        chunk_id: int = None,
-    ):
+        vector: list[float],
+        metadata: dict | None = None,
+        record_id: str | int | None = None,
+        chunk_id: int | None = None,
+    ) -> bool:
         return await self.insert_many_vectors(
             collection_name=collection_name,
             text_list=[text],
@@ -367,13 +367,13 @@ class PGVectorDBProvider(VectorDBInterface):
     async def insert_many_vectors(
         self,
         collection_name: str,
-        text_list: list,
-        vectors: list,
-        metadata: list = None,
-        record_ids: list = None,
+        text_list: list[str],
+        vectors: list[list[float]],
+        metadata: list[dict | None] | None = None,
+        record_ids: list[str | int | None] | None = None,
         batch_size: int = 50,
-        chunk_ids: list = None,
-    ):
+        chunk_ids: list[int | None] | None = None,
+    ) -> bool:
         if len(text_list) != len(vectors):
             raise ValueError("Text and vector counts must match.")
         if metadata is None:
