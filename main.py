@@ -1,14 +1,16 @@
-from fastapi import FastAPI
-from src.routes import base, data, vectors
-from contextlib import asynccontextmanager
-from src.helpers.config import get_settings
-from src.stores.llm.LLMProviderFactory import LLMProviderFactory
-from src.stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
-from src.stores.llm.templates.template_parser import TemplateParser
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from src.enums.Database_Enums import BackendDBEnum
+from contextlib import AsyncExitStack, asynccontextmanager
 
-# ------------ LIFESPAN EVENT HANDLER ------------ #
+from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from src.enums.Database_Enums import BackendDBEnum
+from src.helpers.config import get_settings
+from src.routes import base, data, vectors
+from src.stores.llm.LLMProviderFactory import LLMProviderFactory
+from src.stores.llm.templates.template_parser import TemplateParser
+from src.stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -21,36 +23,58 @@ async def lifespan(app: FastAPI):
     if not settings.POSTGRES_URI:
         raise ValueError("POSTGRES_URI must be configured for PostgreSQL.")
 
-    app.state.db_engine = create_async_engine(settings.POSTGRES_URI, echo=True)
-    app.state.session_factory = async_sessionmaker(
-        app.state.db_engine,
-        expire_on_commit=False,
-    )
-    llm_factory = LLMProviderFactory(settings)
-    vector_db_factory = VectorDBProviderFactory(settings)
+    async with AsyncExitStack() as exit_stack:
+        app.state.db_engine = create_async_engine(settings.POSTGRES_URI)
+        exit_stack.push_async_callback(app.state.db_engine.dispose)
+        app.state.session_factory = async_sessionmaker(
+            app.state.db_engine,
+            expire_on_commit=False,
+        )
 
-    # Generation client
-    app.generation_client = llm_factory.create(provider=settings.GENERATION_BACKEND) 
-    app.generation_client.set_generation_model(model_id=settings.GENERATION_MODEL_ID)
+        llm_factory = LLMProviderFactory(settings)
+        vector_db_factory = VectorDBProviderFactory(settings)
 
-    # Embedding client
-    app.embedding_client = llm_factory.create(provider=settings.EMBEDDING_BACKEND)
-    app.embedding_client.set_embedding_model(model_id=settings.EMBEDDING_MODEL_ID, embedding_size=settings.EMBEDDING_MODEL_SIZE)
+        app.generation_client = llm_factory.create(
+            provider=settings.GENERATION_BACKEND
+        )
+        if app.generation_client is None:
+            raise ValueError(
+                f"Unsupported generation provider: {settings.GENERATION_BACKEND}"
+            )
+        exit_stack.push_async_callback(app.generation_client.close)
+        app.generation_client.set_generation_model(
+            model_id=settings.GENERATION_MODEL_ID
+        )
 
-    # Vector store client
-    app.vector_db_client = vector_db_factory.create(provider=settings.VECTOR_DB_BACKEND)
-    await app.vector_db_client.connect()
+        app.embedding_client = llm_factory.create(
+            provider=settings.EMBEDDING_BACKEND
+        )
+        if app.embedding_client is None:
+            raise ValueError(
+                f"Unsupported embedding provider: {settings.EMBEDDING_BACKEND}"
+            )
+        exit_stack.push_async_callback(app.embedding_client.close)
+        app.embedding_client.set_embedding_model(
+            model_id=settings.EMBEDDING_MODEL_ID,
+            embedding_size=settings.EMBEDDING_MODEL_SIZE,
+        )
 
-    app.template_parser = TemplateParser(
-        language=settings.PRIMARY_LANG,
-        default_language=settings.DEFAULT_LANG,
-    )
+        app.vector_db_client = vector_db_factory.create(
+            provider=settings.VECTOR_DB_BACKEND
+        )
+        if app.vector_db_client is None:
+            raise ValueError(
+                f"Unsupported vector database provider: {settings.VECTOR_DB_BACKEND}"
+            )
+        exit_stack.push_async_callback(app.vector_db_client.disconnect)
+        await app.vector_db_client.connect()
 
-    try:
+        app.template_parser = TemplateParser(
+            language=settings.PRIMARY_LANG,
+            default_language=settings.DEFAULT_LANG,
+        )
+
         yield
-    finally:
-        await app.state.db_engine.dispose()
-        await app.vector_db_client.disconnect()
 
 
 app = FastAPI(lifespan=lifespan)

@@ -54,6 +54,8 @@ curl -X POST "http://localhost:8000/api/v1/data/upload_file/1" \
   -F "file=@/path/to/file.pdf"
 ```
 - Response: JSON with validation message and status.
+- Vector search and RAG answer requests require non-blank text up to 4,000
+  characters. Their `limit` defaults to 5 and must be between 1 and 20.
 
 ## File upload notes / implementation hints
 - FastAPI expects form file fields for uploads:
@@ -110,6 +112,11 @@ Do not share one `AsyncSession` across concurrent requests or keep a session
 open for the lifetime of the provider. Sessions are mutable and should be
 created for a request or unit of work. Keeping the `AsyncEngine` on the provider
 is appropriate because it manages the pool.
+
+The application disables SQLAlchemy statement echoing by default to avoid
+logging SQL parameters that may contain user data. The async database engine,
+vector database client, and LLM clients are closed during application shutdown,
+including when startup fails after a resource has been created.
 
 The pgvector provider's methods are asynchronous, so callers must await them
 (for example, `await provider.search_by_vector(...)`). The application lifecycle

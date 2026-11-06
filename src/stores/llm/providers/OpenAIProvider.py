@@ -36,6 +36,11 @@ class OpenAIProvider(LLMInterface):
         self.embedding_model_id = model_id
         self.embedding_size = embedding_size
 
+    async def close(self) -> None:
+        if self.client is not None:
+            await self.client.close()
+            self.client = None
+
     
     async def generate_text(
         self, 

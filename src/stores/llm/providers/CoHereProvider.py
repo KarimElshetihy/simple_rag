@@ -34,6 +34,11 @@ class CoHereProvider(LLMInterface):
         self.embedding_model_id = model_id
         self.embedding_size = embedding_size
 
+    async def close(self) -> None:
+        if self.client is not None:
+            await self.client.__aexit__(None, None, None)
+            self.client = None
+
     
     async def generate_text(
         self, 

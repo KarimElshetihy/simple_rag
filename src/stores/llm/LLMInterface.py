@@ -25,5 +25,9 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod
+    async def close(self) -> None:
+        pass
+
+    @abstractmethod
     def construct_prompt(self, prompt: str, role: str):
         pass

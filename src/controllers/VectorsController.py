@@ -93,7 +93,7 @@ class VectorsController(BaseController):
         )
 
     async def search_vector_db_collection(
-        self, project: Project, text: str, limit: int = 10
+        self, project: Project, text: str, limit: int = 5
     ) -> list:
 
         collection_name = self.create_collection_name(project_id=project.project_id)
@@ -112,7 +112,7 @@ class VectorsController(BaseController):
         )
     
     async def answer_rag_question(
-        self, project: Project, query: str, limit: int = 10
+        self, project: Project, query: str, limit: int = 5
     ) -> tuple[str | None, str | None, list | None]:
         
         answer, full_prompt, chat_history = None, None, None
