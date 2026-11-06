@@ -54,7 +54,7 @@ class QdrantDB(VectorDBInterface):
             self.client = None
             self.logger.info("Disconnected from Qdrant at %s", self.db_path)
 
-    async def is_collection_exist(self, collection_name: str) -> bool:
+    async def collection_exists(self, collection_name: str) -> bool:
         return (
             await self._get_active_alias_target(collection_name) is not None
             or await self._require_client().collection_exists(
@@ -62,7 +62,7 @@ class QdrantDB(VectorDBInterface):
             )
         )
 
-    async def list_all_collections(self) -> list[str]:
+    async def list_collections(self) -> list[str]:
         collections = await self._require_client().get_collections()
         return [collection.name for collection in collections.collections]
 
@@ -90,11 +90,11 @@ class QdrantDB(VectorDBInterface):
             await client.delete_collection(collection_name=collection_name)
 
     async def ensure_vector_index(self, collection_name: str) -> bool:
-        if not await self.is_collection_exist(collection_name):
+        if not await self.collection_exists(collection_name):
             raise ValueError(f"Collection does not exist: {collection_name}")
         return False
 
-    async def publish_collection(
+    async def publish_staging_collection(
         self, staging_collection: str, collection_name: str
     ) -> None:
         if staging_collection == collection_name:
@@ -146,15 +146,11 @@ class QdrantDB(VectorDBInterface):
             collection_name,
         )
 
-    async def create_collection(
-        self, collection_name: str, embedding_size: int, do_reset: bool = False
-    ) -> bool:
+    async def create_collection(self, collection_name: str, embedding_size: int) -> bool:
         if embedding_size <= 0:
             raise ValueError("Embedding size must be greater than zero.")
-        if do_reset:
-            await self.delete_collection(collection_name)
 
-        if not await self.is_collection_exist(collection_name):
+        if not await self.collection_exists(collection_name):
             await self._require_client().create_collection(
                 collection_name=collection_name,
                 vectors_config=models.VectorParams(
@@ -166,7 +162,7 @@ class QdrantDB(VectorDBInterface):
             return True
         return False
 
-    async def insert_vector(
+    async def upsert_vector(
         self,
         collection_name: str,
         text: str,
@@ -175,7 +171,7 @@ class QdrantDB(VectorDBInterface):
         record_id: str | int | None = None,
         chunk_id: int | None = None,
     ) -> bool:
-        return await self.insert_many_vectors(
+        return await self.upsert_vectors(
             collection_name=collection_name,
             text_list=[text],
             vectors=[vector],
@@ -184,7 +180,7 @@ class QdrantDB(VectorDBInterface):
             chunk_ids=[chunk_id],
         )
 
-    async def insert_many_vectors(
+    async def upsert_vectors(
         self,
         collection_name: str,
         text_list: list[str],
@@ -220,7 +216,7 @@ class QdrantDB(VectorDBInterface):
             raise ValueError(
                 "Text, metadata, record ID, and chunk ID counts must match."
             )
-        if not await self.is_collection_exist(collection_name):
+        if not await self.collection_exists(collection_name):
             self.logger.error(
                 "Cannot insert records into non-existent collection: %s",
                 collection_name,
@@ -248,7 +244,7 @@ class QdrantDB(VectorDBInterface):
             )
         return True
 
-    async def search_by_vector(
+    async def search_by_embedding(
         self, collection_name: str, vector: list[float], limit: int = 5
     ) -> list[RetrievedDocument]:
         if limit <= 0:

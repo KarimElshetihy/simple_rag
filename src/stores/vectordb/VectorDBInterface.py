@@ -15,11 +15,11 @@ class VectorDBInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def is_collection_exist(self, collection_name: str) -> bool:
+    async def collection_exists(self, collection_name: str) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    async def list_all_collections(self) -> list[str]:
+    async def list_collections(self) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod
@@ -31,7 +31,7 @@ class VectorDBInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def publish_collection(
+    async def publish_staging_collection(
         self, staging_collection: str, collection_name: str
     ) -> None:
         raise NotImplementedError
@@ -41,12 +41,11 @@ class VectorDBInterface(ABC):
         self,
         collection_name: str,
         embedding_size: int,
-        do_reset: bool = False,
     ) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    async def insert_vector(
+    async def upsert_vector(
         self,
         collection_name: str,
         text: str,
@@ -58,7 +57,7 @@ class VectorDBInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def insert_many_vectors(
+    async def upsert_vectors(
         self,
         collection_name: str,
         text_list: list[str],
@@ -71,7 +70,7 @@ class VectorDBInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def search_by_vector(
+    async def search_by_embedding(
         self,
         collection_name: str,
         vector: list[float],

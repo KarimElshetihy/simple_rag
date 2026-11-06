@@ -93,7 +93,7 @@ async def index_vector(
                 collection_name=target_collection,
             )
             if staging_collection:
-                await vec_controller.publish_vector_collection(
+                await vec_controller.publish_staging_collection(
                     staging_collection=staging_collection,
                     project=project,
                 )

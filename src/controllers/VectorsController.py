@@ -44,11 +44,11 @@ class VectorsController(BaseController):
             collection_name=collection_name
         )
 
-    async def publish_vector_collection(
+    async def publish_staging_collection(
         self, staging_collection: str, project: Project
     ):
         collection_name = self.create_collection_name(project_id=project.project_id)
-        return await self.vector_db_client.publish_collection(
+        return await self.vector_db_client.publish_staging_collection(
             staging_collection=staging_collection,
             collection_name=collection_name,
         )
@@ -57,7 +57,6 @@ class VectorsController(BaseController):
         self,
         project: Project,
         chunks: list[Chunk],
-        do_reset: bool = False,
         collection_name: str | None = None,
     ) -> bool:
         collection_name = collection_name or self.create_collection_name(
@@ -88,10 +87,9 @@ class VectorsController(BaseController):
         await self.vector_db_client.create_collection(
             collection_name=collection_name,
             embedding_size=self.embedding_client.embedding_size,
-            do_reset=do_reset,
         )
 
-        return await self.vector_db_client.insert_many_vectors(
+        return await self.vector_db_client.upsert_vectors(
             collection_name=collection_name,
             text_list=texts,
             metadata=metadata,
@@ -113,7 +111,7 @@ class VectorsController(BaseController):
         if vectors is None or len(vectors) != 1 or not vectors[0]:
             return []
 
-        return await self.vector_db_client.search_by_vector(
+        return await self.vector_db_client.search_by_embedding(
             collection_name=collection_name,
             vector=vectors[0],
             limit=limit,

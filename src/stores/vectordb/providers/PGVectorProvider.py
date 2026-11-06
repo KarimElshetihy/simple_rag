@@ -85,7 +85,7 @@ class PGVectorDBProvider(VectorDBInterface):
             self._table_name(collection_name)
         )
 
-    async def is_collection_exist(self, collection_name: str) -> bool:
+    async def collection_exists(self, collection_name: str) -> bool:
         table_name = self._table_name(collection_name)
         engine = self._require_engine()
         async with engine.connect() as connection:
@@ -103,7 +103,7 @@ class PGVectorDBProvider(VectorDBInterface):
                 ).scalar_one_or_none()
             )
 
-    async def list_all_collections(self) -> List[str]:
+    async def list_collections(self) -> List[str]:
         prefix = f"{PGVectorSchemaEnums._PREFIX.value}_"
         engine = self._require_engine()
         async with engine.connect() as connection:
@@ -147,12 +147,12 @@ class PGVectorDBProvider(VectorDBInterface):
         async with engine.begin() as connection:
             await connection.execute(sqltext(f"DROP TABLE IF EXISTS {table_name}"))
 
-    async def publish_collection(
+    async def publish_staging_collection(
         self, staging_collection: str, collection_name: str
     ) -> None:
         if staging_collection == collection_name:
             raise ValueError("The staging and published collection names must differ.")
-        if not await self.is_collection_exist(staging_collection):
+        if not await self.collection_exists(staging_collection):
             raise ValueError(f"Staging collection does not exist: {staging_collection}")
 
         staging_table = self._table_name(staging_collection)
@@ -208,15 +208,13 @@ class PGVectorDBProvider(VectorDBInterface):
         )
 
     async def create_collection(
-        self, collection_name: str, embedding_size: int, do_reset: bool = False
+        self, collection_name: str, embedding_size: int
     ):
         if embedding_size <= 0:
             raise ValueError("Embedding size must be greater than zero.")
 
         table_name = self._quoted_table_name(collection_name)
-        if do_reset:
-            await self.delete_collection(collection_name)
-        elif await self.is_collection_exist(collection_name):
+        if await self.collection_exists(collection_name):
             return False
 
         engine = self._require_engine()
@@ -279,7 +277,7 @@ class PGVectorDBProvider(VectorDBInterface):
                 f"Unsupported pgvector distance method: {self.distance_method}"
             ) from error
 
-        if not await self.is_collection_exist(collection_name):
+        if not await self.collection_exists(collection_name):
             raise ValueError(f"Collection does not exist: {collection_name}")
 
         name_prefix, index_name = self._vector_index_names(
@@ -346,7 +344,7 @@ class PGVectorDBProvider(VectorDBInterface):
         )
         return True
 
-    async def insert_vector(
+    async def upsert_vector(
         self,
         collection_name: str,
         text: str,
@@ -355,7 +353,7 @@ class PGVectorDBProvider(VectorDBInterface):
         record_id: str | int | None = None,
         chunk_id: int | None = None,
     ) -> bool:
-        return await self.insert_many_vectors(
+        return await self.upsert_vectors(
             collection_name=collection_name,
             text_list=[text],
             vectors=[vector],
@@ -364,7 +362,7 @@ class PGVectorDBProvider(VectorDBInterface):
             chunk_ids=[chunk_id],
         )
 
-    async def insert_many_vectors(
+    async def upsert_vectors(
         self,
         collection_name: str,
         text_list: list[str],
@@ -388,7 +386,7 @@ class PGVectorDBProvider(VectorDBInterface):
             raise ValueError("Database chunk IDs must not be None.")
         if batch_size <= 0:
             raise ValueError("Batch size must be greater than zero.")
-        if not await self.is_collection_exist(collection_name):
+        if not await self.collection_exists(collection_name):
             self.logger.error(
                 "Cannot insert records into non-existent collection: %s",
                 collection_name,
@@ -431,12 +429,12 @@ class PGVectorDBProvider(VectorDBInterface):
                 await connection.execute(statement, rows)
         return True
 
-    async def search_by_vector(
+    async def search_by_embedding(
         self, collection_name: str, vector: list, limit: int = 5
     ) -> List[RetrievedDocument]:
         if limit <= 0:
             raise ValueError("Search limit must be greater than zero.")
-        if not await self.is_collection_exist(collection_name):
+        if not await self.collection_exists(collection_name):
             raise ValueError(f"Collection does not exist: {collection_name}")
 
         operator = (

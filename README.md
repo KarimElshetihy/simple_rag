@@ -120,9 +120,9 @@ logging SQL parameters that may contain user data. The async database engine,
 vector database client, and LLM clients are closed during application shutdown,
 including when startup fails after a resource has been created.
 
-The pgvector provider's methods are asynchronous, so callers must await them
-(for example, `await provider.search_by_vector(...)`). The application lifecycle
-and vector controller use asynchronous APIs for both pgvector and Qdrant.
+The vector provider methods are asynchronous, so callers must await them
+(for example, `await provider.search_by_embedding(...)`). The application
+lifecycle and vector controller use asynchronous APIs for both pgvector and Qdrant.
 Embedding and text-generation requests are asynchronous as well.
 
 Document embedding uses each provider's batch API. Indexing sends at most 64
