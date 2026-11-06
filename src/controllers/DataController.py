@@ -1,10 +1,13 @@
 from .BaseController import BaseController
 from .ProjectController import ProjectController
-from ..enums import ResponseSignal, ProcessEnum
+from ..enums import ResponseSignal
 from fastapi import UploadFile
+import logging
 import re
 import os
 import aiofiles
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class DataController(BaseController):
@@ -59,5 +62,11 @@ class DataController(BaseController):
                     await f.write(chunk)
 
             return ResponseSignal.FILE_UPLOAD_SUCCESS.value
-        except Exception as e:
-            return ResponseSignal.FILE_UPLOAD_FAILED.value
+        except Exception:
+            try:
+                os.remove(file_path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.exception("Failed to remove incomplete upload %s", file_path)
+            raise
