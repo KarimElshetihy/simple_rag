@@ -1,10 +1,10 @@
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .db_schemes.db_rag.schemes.chunk import AssetChunk
+from src.models.db_schemes.db_rag.schemes.chunk import AssetChunk
 
 
-class ChunkModel:
+class ChunkRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -45,7 +45,7 @@ class ChunkModel:
 
         return chunks, total_pages
 
-    async def get_poject_chunks(
+    async def get_project_chunks(
         self, project_id: int, page_no: int = 1, page_size: int = 50
     ):
         result = await self.session.execute(

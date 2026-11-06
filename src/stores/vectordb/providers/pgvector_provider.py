@@ -8,8 +8,8 @@ from sqlalchemy import text as sqltext
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from ..VectorDBInterface import VectorDBInterface
-from src.enums.VectorDBEnums import (
+from ..vector_db_interface import VectorDBInterface
+from src.enums.vector_db_enums import (
     DistanceMethodEnums,
     PGVectorDistanceMethodEnums,
     PGVectorIndexTypeEnums,

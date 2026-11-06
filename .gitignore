@@ -53,3 +53,6 @@ Pipfile.lock
 # Folders
 uploaded_files
 vector_db
+/data/
+/src/assets/uploaded_files/
+/src/assets/vector_db/

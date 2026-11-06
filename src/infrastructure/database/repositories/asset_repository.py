@@ -1,10 +1,10 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .db_schemes.db_rag.schemes.asset import Asset
+from src.models.db_schemes.db_rag.schemes.asset import Asset
 
 
-class AssetModel:
+class AssetRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 

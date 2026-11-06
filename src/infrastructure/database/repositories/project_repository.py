@@ -1,10 +1,10 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .db_schemes.db_rag.schemes.project import Project
+from src.models.db_schemes.db_rag.schemes.project import Project
 
 
-class ProjectModel:
+class ProjectRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 

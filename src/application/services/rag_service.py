@@ -1,16 +1,30 @@
+import logging
+from dataclasses import dataclass
 from uuid import uuid4
 
-from .BaseController import BaseController
-from ..enums.LLMEnums import DocumentTypeEnums
-from ..models.db_schemes.db_rag.schemes.project import Project
-from ..models.db_schemes.db_rag.schemes.chunk import AssetChunk as Chunk
+from src.enums.llm_enums import DocumentTypeEnums
+from src.enums import ResponseSignal
+from src.infrastructure.database.repositories import (
+    ChunkRepository,
+    ProjectRepository,
+)
+from src.models.db_schemes.db_rag.schemes.project import Project
+from src.models.db_schemes.db_rag.schemes.chunk import AssetChunk as Chunk
 
-class VectorsController(BaseController):
+
+logger = logging.getLogger("uvicorn.error")
+
+
+@dataclass
+class VectorIndexResult:
+    signal: ResponseSignal
+    inserted_items_count: int = 0
+
+
+class RagService:
     EMBEDDING_BATCH_SIZE = 64
 
     def __init__(self, vector_db_client, generation_client, embedding_client, template_parser):
-        super().__init__()
-
         self.vector_db_client = vector_db_client
         self.generation_client = generation_client
         self.embedding_client = embedding_client
@@ -21,6 +35,81 @@ class VectorsController(BaseController):
 
     def create_staging_collection_name(self):
         return f"staging_{uuid4().hex}"
+
+    async def index_project_chunks(
+        self,
+        project_id: str,
+        project_repository: ProjectRepository,
+        chunk_repository: ChunkRepository,
+        do_reset: bool = False,
+    ) -> VectorIndexResult:
+        project = await project_repository.get_project_or_create(
+            project_id=project_id
+        )
+        if not project:
+            return VectorIndexResult(
+                signal=ResponseSignal.PROJECT_NOT_FOUND_ERROR
+            )
+
+        staging_collection = (
+            self.create_staging_collection_name() if do_reset else None
+        )
+        target_collection = staging_collection or self.create_collection_name(
+            project_id=project.project_id
+        )
+        collection_published = False
+        inserted_items_count = 0
+
+        try:
+            page_no = 1
+            while True:
+                page_chunks = await chunk_repository.get_project_chunks(
+                    project_id=project.id,
+                    page_no=page_no,
+                )
+                if not page_chunks:
+                    break
+
+                is_inserted = await self.index_into_vector_db(
+                    project=project,
+                    chunks=page_chunks,
+                    collection_name=target_collection,
+                )
+                if not is_inserted:
+                    return VectorIndexResult(
+                        signal=ResponseSignal.INSERT_INTO_VECTORDB_ERROR
+                    )
+
+                inserted_items_count += len(page_chunks)
+                page_no += 1
+
+            if inserted_items_count:
+                await self.ensure_vector_index(
+                    project=project,
+                    collection_name=target_collection,
+                )
+                if staging_collection:
+                    await self.publish_staging_collection(
+                        staging_collection=staging_collection,
+                        project=project,
+                    )
+                    collection_published = True
+
+            return VectorIndexResult(
+                signal=ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS,
+                inserted_items_count=inserted_items_count,
+            )
+        finally:
+            if staging_collection and not collection_published:
+                try:
+                    await self.vector_db_client.delete_collection(
+                        collection_name=staging_collection
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to clean up staging vector collection %s",
+                        staging_collection,
+                    )
 
     async def reset_vector_db_collection(self, project: Project):
         collection_name = self.create_collection_name(project_id=project.project_id)
@@ -33,6 +122,16 @@ class VectorsController(BaseController):
         return await self.vector_db_client.get_collection_info(
             collection_name=collection_name
         )
+
+    async def get_project_collection_info(
+        self,
+        project_id: str,
+        project_repository: ProjectRepository,
+    ):
+        project = await project_repository.get_project_or_create(
+            project_id=project_id
+        )
+        return await self.get_vector_db_collection_info(project=project)
 
     async def ensure_vector_index(
         self, project: Project, collection_name: str | None = None
@@ -116,7 +215,23 @@ class VectorsController(BaseController):
             vector=vectors[0],
             limit=limit,
         )
-    
+
+    async def search_project(
+        self,
+        project_id: str,
+        text: str,
+        project_repository: ProjectRepository,
+        limit: int = 5,
+    ) -> list:
+        project = await project_repository.get_project_or_create(
+            project_id=project_id
+        )
+        return await self.search_vector_db_collection(
+            project=project,
+            text=text,
+            limit=limit,
+        )
+
     async def answer_rag_question(
         self, project: Project, query: str, limit: int = 5
     ) -> tuple[str | None, str | None, list | None]:
@@ -131,7 +246,7 @@ class VectorsController(BaseController):
 
         if not retrieved_documents or len(retrieved_documents) == 0:
             return answer, full_prompt, chat_history
-        
+
         system_prompt = self.template_parser.get("rag", "system_prompt")
 
         documents_prompts = "\n".join(
@@ -165,5 +280,21 @@ class VectorsController(BaseController):
         )
 
         return answer, full_prompt, chat_history
+
+    async def answer_project_question(
+        self,
+        project_id: str,
+        query: str,
+        project_repository: ProjectRepository,
+        limit: int = 5,
+    ) -> tuple[str | None, str | None, list | None]:
+        project = await project_repository.get_project_or_create(
+            project_id=project_id
+        )
+        return await self.answer_rag_question(
+            project=project,
+            query=query,
+            limit=limit,
+        )
 
     

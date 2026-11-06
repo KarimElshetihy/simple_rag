@@ -1,17 +1,12 @@
-import logging
-
 from fastapi import APIRouter, Depends, status, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..helpers.db import get_db_session
-from ..models.ProjectModel import ProjectModel
-from ..schemas.VectorsSchema import PushRequest, SearchRequest
-from ..controllers.VectorsController import VectorsController
+from ..schemas.vectors_schema import PushRequest, SearchRequest
+from ..application.services.rag_service import RagService
 from ..enums import ResponseSignal
-from ..models.ChunkModel import ChunkModel
-
-logger = logging.getLogger("uvicorn.error")
+from ..infrastructure.database.repositories import ChunkRepository, ProjectRepository
 
 vectors_router = APIRouter(
     prefix="/api/v1/vectors",tags=["vectors"],)
@@ -23,99 +18,31 @@ async def index_vector(
     push_request: PushRequest,
     session: AsyncSession = Depends(get_db_session),
 ):
-    project_model = ProjectModel(session)
-
-    project = await project_model.get_project_or_create(project_id=project_id)
-
-    if not project:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value
-            }
-        )
-    
-    vec_controller = VectorsController(
+    rag_service = RagService(
         vector_db_client=request.app.vector_db_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
         template_parser=request.app.template_parser
     )
 
-    has_records = True
-    page_no = 1
-    inserted_items_count = 0
-
-    chunk_model = ChunkModel(session)
-    staging_collection = (
-        vec_controller.create_staging_collection_name()
-        if push_request.do_reset
-        else None
+    result = await rag_service.index_project_chunks(
+        project_id=project_id,
+        project_repository=ProjectRepository(session),
+        chunk_repository=ChunkRepository(session),
+        do_reset=push_request.do_reset,
     )
-    target_collection = staging_collection or vec_controller.create_collection_name(
-        project_id=project.project_id
-    )
-    collection_published = False
-
-    try:
-        while has_records:
-            page_chunks = await chunk_model.get_poject_chunks(
-                project_id=project.id,
-                page_no=page_no,
-            )
-
-            if page_chunks:
-                page_no += 1
-
-            if not page_chunks:
-                has_records = False
-                break
-
-            is_inserted = await vec_controller.index_into_vector_db(
-                project=project,
-                chunks=page_chunks,
-                collection_name=target_collection,
-            )
-
-            if not is_inserted:
-                return JSONResponse(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    content={
-                        "signal": ResponseSignal.INSERT_INTO_VECTORDB_ERROR.value
-                    },
-                )
-
-            inserted_items_count += len(page_chunks)
-
-        if inserted_items_count:
-            await vec_controller.ensure_vector_index(
-                project=project,
-                collection_name=target_collection,
-            )
-            if staging_collection:
-                await vec_controller.publish_staging_collection(
-                    staging_collection=staging_collection,
-                    project=project,
-                )
-                collection_published = True
-
+    if result.signal != ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS:
         return JSONResponse(
-            content={
-                "signal": ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS.value,
-                "inserted_items_count": inserted_items_count,
-            }
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": result.signal.value},
         )
-    finally:
-        if staging_collection and not collection_published:
-            try:
-                await request.app.vector_db_client.delete_collection(
-                    collection_name=staging_collection
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to clean up staging vector collection %s",
-                    staging_collection,
-                )
+
+    return JSONResponse(
+        content={
+            "signal": result.signal.value,
+            "inserted_items_count": result.inserted_items_count,
+        }
+    )
 
 @vectors_router.get("/index/info/{project_id}")
 async def get_project_index_info(
@@ -124,21 +51,16 @@ async def get_project_index_info(
     session: AsyncSession = Depends(get_db_session),
 ):
     
-    project_model = ProjectModel(session)
-
-    project = await project_model.get_project_or_create(
-        project_id=project_id
-    )
-
-    vec_controller = VectorsController(
+    rag_service = RagService(
         vector_db_client=request.app.vector_db_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
         template_parser=request.app.template_parser
     )
 
-    collection_info = await vec_controller.get_vector_db_collection_info(
-        project=project
+    collection_info = await rag_service.get_project_collection_info(
+        project_id=project_id,
+        project_repository=ProjectRepository(session),
     )
 
     return JSONResponse(
@@ -156,21 +78,18 @@ async def search_index(
     session: AsyncSession = Depends(get_db_session),
 ):
     
-    project_model = ProjectModel(session)
-
-    project = await project_model.get_project_or_create(
-        project_id=project_id
-    )
-
-    vec_controller = VectorsController(
+    rag_service = RagService(
         vector_db_client=request.app.vector_db_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
         template_parser=request.app.template_parser,
     )
 
-    results = await vec_controller.search_vector_db_collection(
-        project=project, text=search_request.text, limit=search_request.limit
+    results = await rag_service.search_project(
+        project_id=project_id,
+        text=search_request.text,
+        project_repository=ProjectRepository(session),
+        limit=search_request.limit,
     )
 
     if not results:
@@ -196,22 +115,17 @@ async def answer_rag(
     session: AsyncSession = Depends(get_db_session),
 ):
     
-    project_model = ProjectModel(session)
-
-    project = await project_model.get_project_or_create(
-        project_id=project_id
-    )
-
-    vec_controller = VectorsController(
+    rag_service = RagService(
         vector_db_client=request.app.vector_db_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
         template_parser=request.app.template_parser,
     )
 
-    answer, full_prompt, chat_history = await vec_controller.answer_rag_question(
-        project=project,
+    answer, full_prompt, chat_history = await rag_service.answer_project_question(
+        project_id=project_id,
         query=search_request.text,
+        project_repository=ProjectRepository(session),
         limit=search_request.limit,
     )
 

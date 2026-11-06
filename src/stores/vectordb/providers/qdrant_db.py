@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from qdrant_client import AsyncQdrantClient, models
 
-from ..VectorDBInterface import VectorDBInterface
-from src.enums.VectorDBEnums import DistanceMethodEnums
+from ..vector_db_interface import VectorDBInterface
+from src.enums.vector_db_enums import DistanceMethodEnums
 from src.models.vector_schemes import RetrievedDocument
 
 

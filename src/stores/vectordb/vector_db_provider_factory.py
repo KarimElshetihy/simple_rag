@@ -1,16 +1,19 @@
-from src.enums.VectorDBEnums import VectorDBEnums, DistanceMethodEnums
-from .providers.QdrantDB import QdrantDB
-from .providers.PGVectorProvider import PGVectorDBProvider
-from src.controllers.BaseController import BaseController
+from src.enums.vector_db_enums import VectorDBEnums
+from src.helpers.config import Settings
+from .providers.qdrant_db import QdrantDB
+from .providers.pgvector_provider import PGVectorDBProvider
+from src.infrastructure.filesystem import StoragePaths
 
 class VectorDBProviderFactory:
-    def __init__(self, config):
+    def __init__(self, config: Settings):
         self.config = config
-        self.base_controller = BaseController()
+        self.storage_paths = StoragePaths()
         
-    def create(self, provider: str):
+    def create(self, provider: str | None):
         if provider == VectorDBEnums.QDRANT.value:
-            db_path = self.base_controller.get_vector_db_path(db_name=self.config.VECTOR_DB_PATH)
+            db_path = self.storage_paths.get_vector_db_path(
+                db_name=self.config.VECTOR_DB_PATH
+            )
             return QdrantDB(
                 db_path=db_path,
                 distance_method=self.config.VECTOR_DB_DISTANCE_METRIC,

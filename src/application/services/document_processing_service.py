@@ -1,18 +1,116 @@
-from .BaseController import BaseController
-from .ProjectController import ProjectController
+import logging
 import os
+from dataclasses import dataclass
+
+from starlette.concurrency import run_in_threadpool
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from ..enums import ProcessEnum
+from src.enums import ProcessEnum
+from src.enums import ResponseSignal
+from src.enums.asset_enums import AssetTypeEnum
+from src.infrastructure.database.repositories import (
+    AssetRepository,
+    ChunkRepository,
+    ProjectRepository,
+)
+from src.infrastructure.filesystem import StoragePaths
+from src.models.db_schemes.db_rag.schemes.chunk import AssetChunk
 
 
-class ProcessController(BaseController):
+logger = logging.getLogger("uvicorn.error")
+
+
+@dataclass
+class ProcessFilesResult:
+    signal: ResponseSignal
+    inserted_chunks: int = 0
+    processed_files: int = 0
+
+
+class DocumentProcessingService:
     def __init__(self, project_id: str):
-        super().__init__()
-
         self.project_id = project_id
-        self.project_path = ProjectController().get_project_path(project_id=project_id)
+        self.project_path = StoragePaths().get_project_path(project_id=project_id)
+
+    async def process_project_files(
+        self,
+        project_repository: ProjectRepository,
+        asset_repository: AssetRepository,
+        chunk_repository: ChunkRepository,
+        file_id: str | None = None,
+        chunk_size: int = 1000,
+        overlap_size: int = 150,
+        do_reset: bool = False,
+    ) -> ProcessFilesResult:
+        project = await project_repository.get_project_or_create(
+            project_id=self.project_id
+        )
+
+        if file_id:
+            asset_record = await asset_repository.get_asset_record(
+                asset_project_id=project.id,
+                asset_name=file_id,
+            )
+            if not asset_record:
+                return ProcessFilesResult(signal=ResponseSignal.FILE_ERROR)
+            project_file_ids = {asset_record.asset_id: asset_record.asset_name}
+        else:
+            project_files = await asset_repository.get_all_project_assets(
+                asset_project_id=project.id,
+                asset_type=AssetTypeEnum.FILE.value,
+            )
+            project_file_ids = {
+                record.asset_id: record.asset_name for record in project_files
+            }
+            if not project_file_ids:
+                return ProcessFilesResult(
+                    signal=ResponseSignal.NO_PROJECT_FILES_ERROR
+                )
+
+        file_chunks_records = []
+        for asset_id, current_file_id in project_file_ids.items():
+            file_content = await run_in_threadpool(
+                self.get_file_content,
+                file_id=current_file_id,
+            )
+            if not file_content:
+                logger.error("Error while processing the file: %s", current_file_id)
+                return ProcessFilesResult(signal=ResponseSignal.PROCESSING_FAILED)
+
+            chunks = await run_in_threadpool(
+                self.process_file_content,
+                file_content=file_content,
+                chunk_size=chunk_size,
+                overlap_size=overlap_size,
+            )
+            if not chunks:
+                return ProcessFilesResult(signal=ResponseSignal.PROCESSING_FAILED)
+
+            file_chunks_records.extend(
+                AssetChunk(
+                    chunk_text=chunk.page_content,
+                    chunk_metadata=chunk.metadata,
+                    chunk_order=index + 1,
+                    chunk_project_id=project.id,
+                    chunk_asset_id=asset_id,
+                )
+                for index, chunk in enumerate(chunks)
+            )
+
+        if do_reset:
+            await chunk_repository.delete_chunks_by_project_id(
+                project_id=project.id
+            )
+
+        inserted_chunks = await chunk_repository.insert_many_chunks(
+            chunks=file_chunks_records
+        )
+        return ProcessFilesResult(
+            signal=ResponseSignal.PROCESSING_SUCCESS,
+            inserted_chunks=inserted_chunks,
+            processed_files=len(project_file_ids),
+        )
 
     def get_file_extension(self, file_id: str):
         return os.path.splitext(file_id)[-1]
@@ -45,7 +143,6 @@ class ProcessController(BaseController):
     def process_file_content(
         self,
         file_content: list,
-        file_id: str,
         chunk_size: int = 1000,
         overlap_size: int = 150,
     ):
