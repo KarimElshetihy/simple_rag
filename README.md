@@ -165,6 +165,9 @@ name, completion status, elapsed seconds, and safe identifiers such as project
 or asset IDs. Indexing logs separate chunk reads, embedding, vector upserts,
 index creation, and collection publication; document upload and processing,
 search, and answer generation are timed as well.
+Prometheus request counters and latency histograms are exposed at `/metrics`.
+Restrict this endpoint to trusted monitoring clients at the network or proxy
+layer before exposing the application beyond a trusted environment.
 
 ## Planned features
 
