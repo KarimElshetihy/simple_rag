@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from time import perf_counter
 
@@ -12,7 +12,7 @@ def _format_context(context: dict[str, object]) -> str:
 
 
 @contextmanager
-def log_duration(operation: str, **context: object) -> Iterator[None]:
+def log_duration(operation: str, **context: object) -> Generator[None, None, None]:
     started_at = perf_counter()
     try:
         yield
@@ -35,7 +35,9 @@ def log_duration(operation: str, **context: object) -> Iterator[None]:
 
 
 @asynccontextmanager
-async def log_async_duration(operation: str, **context: object) -> AsyncIterator[None]:
+async def log_async_duration(
+    operation: str, **context: object
+) -> AsyncGenerator[None, None]:
     started_at = perf_counter()
     try:
         yield
