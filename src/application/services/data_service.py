@@ -1,5 +1,6 @@
 from src.enums import ResponseSignal
 from src.helpers.config import get_settings
+from src.helpers.timing import log_async_duration
 from src.infrastructure.filesystem import StoragePaths
 from fastapi import UploadFile
 import logging
@@ -80,11 +81,12 @@ class DataService:
     async def upload_file_to_path(self, file: UploadFile, file_path: str):
 
         try:
-            async with aiofiles.open(file_path, "wb") as f:
-                while chunk := await file.read(
-                    self.app_settings.FILE_DEFAULT_CHUNK_SIZE
-                ):
-                    await f.write(chunk)
+            async with log_async_duration("upload.write_file"):
+                async with aiofiles.open(file_path, "wb") as f:
+                    while chunk := await file.read(
+                        self.app_settings.FILE_DEFAULT_CHUNK_SIZE
+                    ):
+                        await f.write(chunk)
 
             return ResponseSignal.FILE_UPLOAD_SUCCESS.value
         except Exception:
@@ -116,18 +118,21 @@ class DataService:
             raise FileUploadError from error
 
         try:
-            project = await project_repository.get_project_or_create(
-                project_id=project_id
-            )
-            asset = Asset(
-                asset_project_id=project.id,
-                asset_type=AssetTypeEnum.FILE.value,
-                asset_name=unique_file_name,
-                asset_size=file.size,
-                asset_path=new_file_path,
-                asset_original_name=file.filename,
-            )
-            asset_record = await asset_repository.create_asset(asset=asset)
+            async with log_async_duration(
+                "upload.register_asset", project_id=project_id
+            ):
+                project = await project_repository.get_project_or_create(
+                    project_id=project_id
+                )
+                asset = Asset(
+                    asset_project_id=project.id,
+                    asset_type=AssetTypeEnum.FILE.value,
+                    asset_name=unique_file_name,
+                    asset_size=file.size,
+                    asset_path=new_file_path,
+                    asset_original_name=file.filename,
+                )
+                asset_record = await asset_repository.create_asset(asset=asset)
         except Exception:
             try:
                 os.remove(new_file_path)

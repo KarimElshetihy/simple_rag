@@ -1,14 +1,22 @@
 import logging
 import os
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
 
+import fitz
+from PIL import Image
+import pytesseract
 from starlette.concurrency import run_in_threadpool
+from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from src.enums import ProcessEnum
 from src.enums import ResponseSignal
 from src.enums.asset_enums import AssetTypeEnum
+from src.helpers.timing import log_async_duration, log_duration
+from src.helpers.config import get_settings
 from src.infrastructure.database.repositories import (
     AssetRepository,
     ChunkRepository,
@@ -31,7 +39,37 @@ class ProcessFilesResult:
 class DocumentProcessingService:
     def __init__(self, project_id: str):
         self.project_id = project_id
+        self.app_settings = get_settings()
+        configured_tesseract = self.app_settings.TESSERACT_CMD
+        self.tesseract_cmd = self.resolve_tesseract_command(configured_tesseract)
+        configured_tessdata = self.app_settings.TESSDATA_DIR
+        self.tessdata_dir = configured_tessdata or (
+            str(Path(self.tesseract_cmd).parent / "tessdata")
+            if self.tesseract_cmd
+            else None
+        )
+        if self.tesseract_cmd:
+            pytesseract.pytesseract.tesseract_cmd = self.tesseract_cmd
+        if self.tessdata_dir:
+            os.environ["TESSDATA_PREFIX"] = self.tessdata_dir
         self.project_path = StoragePaths().get_project_path(project_id=project_id)
+
+    @staticmethod
+    def resolve_tesseract_command(configured_command: str | None) -> str | None:
+        if configured_command:
+            if os.path.isfile(configured_command):
+                return configured_command
+            return shutil.which(configured_command)
+
+        executable = shutil.which("tesseract")
+        if executable:
+            return executable
+
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        standard_install = (
+            Path(program_files) / "Tesseract-OCR" / "tesseract.exe"
+        )
+        return str(standard_install) if standard_install.is_file() else None
 
     async def process_project_files(
         self,
@@ -72,11 +110,16 @@ class DocumentProcessingService:
                 asset_path=asset_record.asset_path,
                 file_id=current_file_id,
             )
-            file_content = await run_in_threadpool(
-                self.get_file_content,
-                file_id=current_file_id,
-                file_path=current_file_path,
-            )
+            async with log_async_duration(
+                "document.load_file",
+                project_id=self.project_id,
+                asset_id=asset_record.asset_id,
+            ):
+                file_content = await run_in_threadpool(
+                    self.get_file_content,
+                    file_id=current_file_id,
+                    file_path=current_file_path,
+                )
             if not file_content:
                 if not os.path.isfile(current_file_path):
                     reason = "file is missing from project storage"
@@ -96,12 +139,17 @@ class DocumentProcessingService:
                 )
                 return ProcessFilesResult(signal=ResponseSignal.PROCESSING_FAILED)
 
-            chunks = await run_in_threadpool(
-                self.process_file_content,
-                file_content=file_content,
-                chunk_size=chunk_size,
-                overlap_size=overlap_size,
-            )
+            async with log_async_duration(
+                "document.chunk_file",
+                project_id=self.project_id,
+                asset_id=asset_record.asset_id,
+            ):
+                chunks = await run_in_threadpool(
+                    self.process_file_content,
+                    file_content=file_content,
+                    chunk_size=chunk_size,
+                    overlap_size=overlap_size,
+                )
             if not chunks:
                 logger.error(
                     "No text chunks generated for project asset %s in project %s",
@@ -123,18 +171,32 @@ class DocumentProcessingService:
 
         if do_reset:
             if file_id:
-                await chunk_repository.delete_chunks_by_asset_id(
-                    project_id=project.id,
+                async with log_async_duration(
+                    "document.delete_asset_chunks",
+                    project_id=self.project_id,
                     asset_id=project_files[0].asset_id,
-                )
+                ):
+                    await chunk_repository.delete_chunks_by_asset_id(
+                        project_id=project.id,
+                        asset_id=project_files[0].asset_id,
+                    )
             else:
-                await chunk_repository.delete_chunks_by_project_id(
-                    project_id=project.id
-                )
+                async with log_async_duration(
+                    "document.delete_project_chunks",
+                    project_id=self.project_id,
+                ):
+                    await chunk_repository.delete_chunks_by_project_id(
+                        project_id=project.id
+                    )
 
-        inserted_chunks = await chunk_repository.insert_many_chunks(
-            chunks=file_chunks_records
-        )
+        async with log_async_duration(
+            "document.insert_chunks",
+            project_id=self.project_id,
+            chunks=len(file_chunks_records),
+        ):
+            inserted_chunks = await chunk_repository.insert_many_chunks(
+                chunks=file_chunks_records
+            )
         return ProcessFilesResult(
             signal=ResponseSignal.PROCESSING_SUCCESS,
             inserted_chunks=inserted_chunks,
@@ -147,7 +209,7 @@ class DocumentProcessingService:
         return os.path.join(self.project_path, file_id)
 
     def get_file_extension(self, file_id: str):
-        return os.path.splitext(file_id)[-1]
+        return os.path.splitext(file_id)[-1].lower()
 
     def get_file_loader(self, file_id: str, file_path: str | None = None):
 
@@ -166,7 +228,77 @@ class DocumentProcessingService:
 
         return None
 
+    def load_pdf_with_ocr(self, file_path: str) -> list[Document]:
+        documents = PyMuPDFLoader(file_path).load()
+        pages_to_ocr = [
+            page_number
+            for page_number, document in enumerate(documents)
+            if not document.page_content.strip()
+        ]
+        if not pages_to_ocr:
+            return documents
+
+        if self.tesseract_cmd is None:
+            raise RuntimeError(
+                "Tesseract is required to OCR scanned PDF pages. "
+                "Install it and set TESSERACT_CMD to the executable path."
+            )
+
+        language = self.app_settings.OCR_LANGUAGES
+        tessdata_dir = self.tessdata_dir
+        if tessdata_dir:
+            tessdata_path = Path(tessdata_dir).expanduser()
+            if not tessdata_path.is_dir():
+                raise RuntimeError(
+                    f"TESSDATA_DIR does not exist or is not a directory: "
+                    f"{tessdata_dir}"
+                )
+            missing_languages = [
+                language_code
+                for language_code in language.split("+")
+                if not (tessdata_path / f"{language_code}.traineddata").is_file()
+            ]
+            if missing_languages:
+                raise RuntimeError(
+                    "Tesseract language data is missing from TESSDATA_DIR: "
+                    + ", ".join(missing_languages)
+                )
+
+        with fitz.open(file_path) as pdf:
+            for page_number in pages_to_ocr:
+                page = pdf[page_number]
+                with log_duration(
+                    "document.ocr_page",
+                    project_id=self.project_id,
+                    page=page_number + 1,
+                ):
+                    pixmap = page.get_pixmap(
+                        dpi=300,
+                        colorspace=fitz.csRGB,
+                        alpha=False,
+                    )
+                    image = Image.frombytes(
+                        "RGB",
+                        (pixmap.width, pixmap.height),
+                        pixmap.samples,
+                    )
+                    documents[page_number].page_content = (
+                        pytesseract.image_to_string(
+                            image,
+                            lang=language,
+                        ).strip()
+                    )
+                documents[page_number].metadata["ocr"] = True
+
+        return documents
+
     def get_file_content(self, file_id: str, file_path: str | None = None):
+        if self.get_file_extension(file_id) == ProcessEnum.PDF.value:
+            if file_path is None:
+                file_path = os.path.join(self.project_path, file_id)
+            if not os.path.exists(file_path):
+                return None
+            return self.load_pdf_with_ocr(file_path)
 
         loader = self.get_file_loader(file_id=file_id, file_path=file_path)
 

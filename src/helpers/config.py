@@ -41,6 +41,9 @@ class Settings(BaseSettings):
         PGVectorIndexTypeEnums.HNSW.value
     )
     DATA_DIR: str = "data"
+    OCR_LANGUAGES: str = "eng+ara"
+    TESSERACT_CMD: str | None = None
+    TESSDATA_DIR: str | None = None
 
     PRIMARY_LANG: str = "en"
     DEFAULT_LANG: str = "en"

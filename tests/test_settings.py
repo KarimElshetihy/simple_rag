@@ -14,6 +14,15 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.VECTOR_DB_BACKEND, "PGVECTOR")
         self.assertEqual(settings.FILE_SUPPORTED_TYPES, ["text/plain", "application/pdf"])
         self.assertEqual(settings.PGVECTOR_INDEX_TYPE, "hnsw")
+        self.assertEqual(settings.OCR_LANGUAGES, "eng+ara")
+        self.assertEqual(
+            settings.TESSERACT_CMD,
+            "C:/Program Files/Tesseract-OCR/tesseract.exe",
+        )
+        self.assertEqual(
+            settings.TESSDATA_DIR,
+            "C:/Program Files/Tesseract-OCR/tessdata",
+        )
 
     def test_unknown_provider_is_rejected(self):
         with self.assertRaises(ValidationError):

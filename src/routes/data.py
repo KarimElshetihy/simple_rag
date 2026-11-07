@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..helpers.db import get_db_session
+from ..helpers.timing import log_async_duration
 from ..application.services.data_service import DataService, FileUploadError
 from ..application.services.document_processing_service import (
     DocumentProcessingService,
@@ -41,12 +42,15 @@ async def upload_file(
         )
 
     try:
-        result = await data_service.upload_and_register_file(
-            file=file,
-            project_id=project_id,
-            project_repository=ProjectRepository(session),
-            asset_repository=AssetRepository(session),
-        )
+        async with log_async_duration(
+            "request.upload_file", project_id=project_id
+        ):
+            result = await data_service.upload_and_register_file(
+                file=file,
+                project_id=project_id,
+                project_repository=ProjectRepository(session),
+                asset_repository=AssetRepository(session),
+            )
     except FileUploadError:
         logger.exception("Failed to upload file for project %s", project_id)
         return JSONResponse(
@@ -75,15 +79,18 @@ async def process_file(
     session: AsyncSession = Depends(get_db_session),
 ):
     processing_service = DocumentProcessingService(project_id=project_id)
-    result = await processing_service.process_project_files(
-        project_repository=ProjectRepository(session),
-        asset_repository=AssetRepository(session),
-        chunk_repository=ChunkRepository(session),
-        file_id=process_request.file_id,
-        chunk_size=process_request.chunk_size,
-        overlap_size=process_request.overlap_size,
-        do_reset=process_request.do_reset,
-    )
+    async with log_async_duration(
+        "request.process_files", project_id=project_id
+    ):
+        result = await processing_service.process_project_files(
+            project_repository=ProjectRepository(session),
+            asset_repository=AssetRepository(session),
+            chunk_repository=ChunkRepository(session),
+            file_id=process_request.file_id,
+            chunk_size=process_request.chunk_size,
+            overlap_size=process_request.overlap_size,
+            do_reset=process_request.do_reset,
+        )
     if result.signal != responseSignal.PROCESSING_SUCCESS:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,

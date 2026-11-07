@@ -1,8 +1,9 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.application.services.document_processing_service import (
     DocumentProcessingService,
@@ -32,7 +33,14 @@ class DocumentProcessingServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch(
             "src.application.services.document_processing_service.StoragePaths"
-        ) as storage_paths:
+        ) as storage_paths, patch(
+            "src.application.services.document_processing_service.get_settings",
+            return_value=SimpleNamespace(
+                OCR_LANGUAGES="eng+ara",
+                TESSERACT_CMD=None,
+                TESSDATA_DIR=None,
+            ),
+        ):
             storage_paths.return_value.get_project_path.return_value = "unused"
             self.service = DocumentProcessingService(project_id="project-1")
 
@@ -186,6 +194,173 @@ class DocumentProcessingServiceTests(unittest.IsolatedAsyncioTestCase):
             str(current_upload_path),
             encoding="utf-8",
         )
+
+    def test_scanned_pdf_pages_use_tesseract_ocr(self):
+        documents = [
+            SimpleNamespace(page_content="", metadata={"page": 0}),
+            SimpleNamespace(page_content="existing text", metadata={"page": 1}),
+        ]
+        pixmap = SimpleNamespace(width=10, height=20, samples=b"rgb")
+        first_page = SimpleNamespace(
+            get_pixmap=unittest.mock.Mock(return_value=pixmap),
+        )
+        second_page = SimpleNamespace(
+            get_pixmap=unittest.mock.Mock(),
+        )
+        pdf = MagicMock()
+        pdf.__enter__.return_value = [first_page, second_page]
+
+        with (
+            patch(
+                "src.application.services.document_processing_service.PyMuPDFLoader"
+            ) as loader,
+            patch(
+                "src.application.services.document_processing_service.shutil.which",
+                return_value="tesseract.exe",
+            ),
+            patch(
+                "src.application.services.document_processing_service.fitz.open",
+                return_value=pdf,
+            ),
+            patch(
+                "src.application.services.document_processing_service.Image.frombytes",
+                return_value="image",
+            ) as frombytes,
+            patch(
+                "src.application.services.document_processing_service.pytesseract.image_to_string",
+                return_value="recognized text",
+            ) as image_to_string,
+        ):
+            loader.return_value.load.return_value = documents
+            self.service.tesseract_cmd = "tesseract.exe"
+            result = self.service.load_pdf_with_ocr("scanned.pdf")
+
+        self.assertEqual(result[0].page_content, "recognized text")
+        self.assertTrue(result[0].metadata["ocr"])
+        self.assertEqual(result[1].page_content, "existing text")
+        first_page.get_pixmap.assert_called_once_with(
+            dpi=300,
+            colorspace=unittest.mock.ANY,
+            alpha=False,
+        )
+        frombytes.assert_called_once_with("RGB", (10, 20), b"rgb")
+        image_to_string.assert_called_once_with(
+            "image",
+            lang="eng+ara",
+        )
+        second_page.get_pixmap.assert_not_called()
+
+    def test_scanned_pdf_without_tesseract_raises_setup_error(self):
+        self.service.tesseract_cmd = None
+        with (
+            patch(
+                "src.application.services.document_processing_service.PyMuPDFLoader"
+            ) as loader,
+            patch(
+                "src.application.services.document_processing_service.shutil.which",
+                return_value=None,
+            ),
+        ):
+            loader.return_value.load.return_value = [
+                SimpleNamespace(page_content="", metadata={"page": 0})
+            ]
+
+            with self.assertRaisesRegex(RuntimeError, "TESSERACT_CMD"):
+                self.service.load_pdf_with_ocr("scanned.pdf")
+
+    def test_scanned_pdf_uses_configured_tesseract_and_tessdata_paths(self):
+        documents = [SimpleNamespace(page_content="", metadata={})]
+        pixmap = SimpleNamespace(width=10, height=20, samples=b"rgb")
+        page = SimpleNamespace(get_pixmap=unittest.mock.Mock(return_value=pixmap))
+        pdf = MagicMock()
+        pdf.__enter__.return_value = [page]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            tessdata_path = Path(temporary_directory)
+            (tessdata_path / "eng.traineddata").touch()
+            (tessdata_path / "ara.traineddata").touch()
+            self.service.tessdata_dir = str(tessdata_path)
+            with (
+                patch(
+                    "src.application.services.document_processing_service.PyMuPDFLoader"
+                ) as loader,
+                patch(
+                    "src.application.services.document_processing_service.fitz.open",
+                    return_value=pdf,
+                ),
+                patch(
+                    "src.application.services.document_processing_service.Image.frombytes",
+                    return_value="image",
+                ),
+                patch(
+                    "src.application.services.document_processing_service.pytesseract.image_to_string",
+                    return_value="recognized text",
+                ) as image_to_string,
+            ):
+                loader.return_value.load.return_value = documents
+                self.service.tesseract_cmd = "tesseract.exe"
+                result = self.service.load_pdf_with_ocr("scanned.pdf")
+
+        self.assertEqual(result[0].page_content, "recognized text")
+        image_to_string.assert_called_once_with(
+            "image",
+            lang="eng+ara",
+        )
+
+    def test_service_uses_configured_tesseract_paths(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            executable = root / "tesseract.exe"
+            executable.touch()
+            tessdata = root / "tessdata"
+            tessdata.mkdir()
+            settings = SimpleNamespace(
+                OCR_LANGUAGES="eng",
+                TESSERACT_CMD=str(executable),
+                TESSDATA_DIR=str(tessdata),
+            )
+            with (
+                patch(
+                    "src.application.services.document_processing_service.get_settings",
+                    return_value=settings,
+                ),
+                patch(
+                    "src.application.services.document_processing_service.StoragePaths"
+                ) as storage_paths,
+                patch(
+                    "src.application.services.document_processing_service.pytesseract.pytesseract.tesseract_cmd",
+                    "tesseract",
+                ),
+                patch.dict("os.environ", {"TESSDATA_PREFIX": "previous"}),
+            ):
+                storage_paths.return_value.get_project_path.return_value = "unused"
+                service = DocumentProcessingService(project_id="project-1")
+                self.assertEqual(os.environ["TESSDATA_PREFIX"], str(tessdata))
+
+        self.assertEqual(service.tesseract_cmd, str(executable))
+        self.assertEqual(service.tessdata_dir, str(tessdata))
+
+    def test_pdf_file_content_uses_ocr_aware_loader(self):
+        del self.service.get_file_content
+        documents = [SimpleNamespace(page_content="recognized text")]
+        with (
+            patch.object(
+                self.service,
+                "load_pdf_with_ocr",
+                return_value=documents,
+            ) as load_pdf,
+            patch(
+                "src.application.services.document_processing_service.os.path.exists",
+                return_value=True,
+            ),
+        ):
+            result = self.service.get_file_content(
+                file_id="scanned.PDF",
+                file_path="scanned.PDF",
+            )
+
+        self.assertIs(result, documents)
+        load_pdf.assert_called_once_with("scanned.PDF")
 
 
 if __name__ == "__main__":

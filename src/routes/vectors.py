@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..helpers.db import get_db_session
+from ..helpers.timing import log_async_duration
 from ..schemas.vectors_schema import PushRequest, SearchRequest
 from ..application.services.rag_service import RagService
 from ..enums import ResponseSignal
@@ -25,12 +26,15 @@ async def index_vector(
         template_parser=request.app.template_parser
     )
 
-    result = await rag_service.index_project_chunks(
-        project_id=project_id,
-        project_repository=ProjectRepository(session),
-        chunk_repository=ChunkRepository(session),
-        do_reset=push_request.do_reset,
-    )
+    async with log_async_duration(
+        "request.index_project", project_id=project_id
+    ):
+        result = await rag_service.index_project_chunks(
+            project_id=project_id,
+            project_repository=ProjectRepository(session),
+            chunk_repository=ChunkRepository(session),
+            do_reset=push_request.do_reset,
+        )
     if result.signal != ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -85,12 +89,15 @@ async def search_index(
         template_parser=request.app.template_parser,
     )
 
-    results = await rag_service.search_project(
-        project_id=project_id,
-        text=search_request.text,
-        project_repository=ProjectRepository(session),
-        limit=search_request.limit,
-    )
+    async with log_async_duration(
+        "request.search_project", project_id=project_id
+    ):
+        results = await rag_service.search_project(
+            project_id=project_id,
+            text=search_request.text,
+            project_repository=ProjectRepository(session),
+            limit=search_request.limit,
+        )
 
     if not results:
         return JSONResponse(
@@ -122,12 +129,15 @@ async def answer_rag(
         template_parser=request.app.template_parser,
     )
 
-    answer, full_prompt, chat_history = await rag_service.answer_project_question(
-        project_id=project_id,
-        query=search_request.text,
-        project_repository=ProjectRepository(session),
-        limit=search_request.limit,
-    )
+    async with log_async_duration(
+        "request.answer_question", project_id=project_id
+    ):
+        answer, full_prompt, chat_history = await rag_service.answer_project_question(
+            project_id=project_id,
+            query=search_request.text,
+            project_repository=ProjectRepository(session),
+            limit=search_request.limit,
+        )
 
     if not answer:
         return JSONResponse(

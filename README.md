@@ -94,6 +94,12 @@ Edit `src/.env` and set your PostgreSQL connection string and OpenAI API key.
 Runtime uploads and local Qdrant data are written under `DATA_DIR` (default:
 `data/` at the repository root). Existing files under `src/assets/` are left
 untouched and are not migrated automatically.
+Scanned PDFs require Tesseract OCR installed on the machine running the app.
+The app looks for Tesseract on `PATH` and in the standard Windows install
+directory. If it is installed elsewhere, set `TESSERACT_CMD` and optionally
+`TESSDATA_DIR` in `src/.env`. Install the language packs selected by
+`OCR_LANGUAGES` (default: `eng+ara`). PDFs with extractable text do not require
+OCR. The example paths assume the standard Windows installation directory.
 The database must exist and have PostgreSQL with the pgvector extension
 available. Ensure `alembic.ini` points to the same database, then create the
 application tables:
@@ -154,6 +160,12 @@ flowchart TD
 - Consider adding a script (e.g., `scripts/generate_docs.py`) to extract endpoints and docstrings into `docs/`.
 - For automatic docs updates on repo changes, use a CI job that runs the generator and commits updated docs.
 
+Runtime operation timings are written to the application log with an operation
+name, completion status, elapsed seconds, and safe identifiers such as project
+or asset IDs. Indexing logs separate chunk reads, embedding, vector upserts,
+index creation, and collection publication; document upload and processing,
+search, and answer generation are timed as well.
+
 ## Planned features
 
 The following conversational RAG capabilities are planned and are not
@@ -177,7 +189,7 @@ implemented yet:
 - Authentication and project access controls — Ensure users can only search and manage documents belonging to projects they’re authorized to access.
 - Ingestion status and recovery — Track document processing states and surface failures so users can tell whether a file was indexed successfully and retry when needed.
 - Integration tests — Cover API routes and repository behavior, including tests against PostgreSQL/pgvector and Qdrant where practical.
-- Operational visibility — Add structured logs and metrics for ingestion failures, retrieval latency, and LLM errors, while avoiding sensitive content in logs.
+- Operational visibility — Add metrics, dashboards, and alerts for ingestion failures, retrieval latency, and LLM errors; operation duration logs are implemented.
 
 ## Async PostgreSQL connections and sessions
 
