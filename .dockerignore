@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__/
+**/__pycache__/
+*.py[cod]
+**/*.py[cod]
+src/.env
+src/.env.*
+docker/RAG/env/.env.*
+data/
+src/assets/uploaded_files/
+src/assets/vector_db/

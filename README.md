@@ -12,16 +12,21 @@ A minimal Retrieval-Augmented Generation (RAG)-style assistant for local documen
 
 ```text
 simple-rag/
-├── main.py
-├── requirements.txt
+├── docker/
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   └── RAG/
+│       ├── Dockerfile
+│       ├── entrypoint.sh
+│       └── env/
 ├── alembic.ini
 ├── alembic/
 │   ├── env.py
 │   └── versions/
-├── docker/
-│   ├── docker-compose.yml
-│   └── .env.example
 ├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── requirements.txt
 │   ├── application/
 │   │   └── services/
 │   │       ├── data_service.py
@@ -61,7 +66,7 @@ Existing files under `src/assets/` are not migrated automatically.
 
 | Layer / directory | Responsibility | Typical contents |
 |---|---|---|
-| `main.py` | Application entry point and lifespan wiring | FastAPI app, provider setup and shutdown |
+| `src/main.py` | Application entry point and lifespan wiring | FastAPI app, provider setup and shutdown |
 | `src/routes/` | HTTP boundary | Request parsing, service calls, response/status mapping |
 | `src/schemas/` | API input validation | Pydantic request schemas |
 | `src/application/services/` | Application workflows | Upload/registration, document processing, vector indexing and RAG |
@@ -84,7 +89,7 @@ python -m venv .venv
 ```
 2. Install dependencies
 ```powershell
-pip install -r requirements.txt
+pip install -r src/requirements.txt
 ```
 3. Configure the application
 ```powershell
@@ -108,8 +113,65 @@ alembic upgrade head
 ```
 4. Run the development server
 ```powershell
-uvicorn main:app --reload
+uvicorn src.main:app --reload
 ```
+
+## Docker deployment (FastAPI + pgvector)
+
+The main Compose file runs the API, PostgreSQL with pgvector, Nginx, Qdrant,
+Prometheus, Grafana, and node/PostgreSQL exporters. The Celery worker, scheduler,
+Flower, RabbitMQ, and Redis services are not included yet because the repository
+does not currently contain their task-queue application code/configuration.
+
+From the repository root, create any missing environment files from the
+examples. This preserves existing local secrets:
+
+```powershell
+$envDir = "docker\RAG\env"
+@(
+  ".env.app",
+  ".env.postgres",
+  ".env.grafana",
+  ".env.postgres-exporter"
+) | ForEach-Object {
+  $target = Join-Path $envDir $_
+  $example = "$target.example"
+  if (-not (Test-Path $target)) {
+    Copy-Item $example $target
+  }
+}
+```
+
+Set a strong PostgreSQL password in `.env.postgres` and use matching credentials
+and the Compose hostname `pgvector` in the `.env.app` `POSTGRES_URI`. Replace
+the example LLM API key as well. For production, create a dedicated PostgreSQL
+monitoring user and put its credentials in `.env.postgres-exporter`; do not use
+the PostgreSQL superuser for exporter access:
+
+```sql
+CREATE USER postgres_exporter WITH PASSWORD '<strong-password>';
+GRANT pg_monitor TO postgres_exporter;
+```
+
+Set a unique Grafana admin password. URL-encode any special characters in the
+password inside `POSTGRES_URI`. Grafana provisions the Prometheus datasource and
+the Simple RAG overview dashboard automatically. Then build and start the
+services from the repository root:
+
+```powershell
+docker compose -f docker\docker-compose.yml up --build
+```
+
+Nginx exposes the API on port 80. Grafana and Prometheus are bound to localhost
+on ports 3000 and 9090; PostgreSQL, Qdrant, and exporters are only available on
+the Compose network. Uploads and database files are persisted in Docker
+volumes. The image includes Tesseract and English/Arabic language data for
+scanned PDFs. Configure TLS at the reverse proxy before exposing this stack
+to the public internet. Nginx blocks external access to `/metrics`; Prometheus
+scrapes the endpoint directly over the private Compose network. The container
+runs Alembic migrations before starting FastAPI; a failed migration prevents
+the API from starting. Compose probes `/health`, which checks PostgreSQL
+connectivity before marking the API healthy.
 
 ## API
 - POST /api/v1/data/upload_file/{project_id}

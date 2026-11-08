@@ -1,34 +1,145 @@
+name: simple-rag
+
 services:
-  mongodb:
-    image: mongo:7-jammy
-    container_name: mongodb
-    ports:
-      - "27007:27017"
-    volumes:
-      - mongodata:/data/db
+  fastapi:
+    build:
+      context: ..
+      dockerfile: docker/RAG/Dockerfile
+    env_file:
+      - ./RAG/env/.env.app
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      DATA_DIR: /app/data
+      TESSERACT_CMD: /usr/bin/tesseract
+      TESSDATA_DIR: /usr/share/tesseract-ocr/5/tessdata
+    volumes:
+      - fastapi_data:/app/data
+    depends_on:
+      pgvector:
+        condition: service_healthy
     networks:
       - backend
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  nginx:
+    image: nginx:1.28.0-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
 
   pgvector:
     image: pgvector/pgvector:0.8.0-pg17
-    container_name: pgvector
-    ports:
-      - "5432:5432"
+    env_file:
+      - ./RAG/env/.env.postgres
     volumes:
       - pgvector_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - backend
-    restart: always
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - backend
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.3.0
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    depends_on:
+      fastapi:
+        condition: service_healthy
+      node-exporter:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+    networks:
+      - backend
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.0-ubuntu
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    env_file:
+      - ./RAG/env/.env.grafana
+    depends_on:
+      - prometheus
+    networks:
+      - backend
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.rootfs=/rootfs
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    networks:
+      - backend
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    env_file:
+      - ./RAG/env/.env.postgres-exporter
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
 
 networks:
   backend:
+    driver: bridge
 
 volumes:
-  mongodata:
+  fastapi_data:
   pgvector_data:
+  qdrant_data:
+  prometheus_data:
+  grafana_data:

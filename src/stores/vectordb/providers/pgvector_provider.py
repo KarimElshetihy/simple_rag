@@ -47,14 +47,6 @@ class PGVectorDBProvider(VectorDBInterface):
             database_url = database_url.set(drivername="postgresql+asyncpg")
 
         engine = create_async_engine(database_url)
-        try:
-            async with engine.connect() as connection:
-                await connection.execute(sqltext("CREATE EXTENSION IF NOT EXISTS vector"))
-                await connection.commit()
-        except Exception:
-            await engine.dispose()
-            raise
-
         self.engine = engine
         self.logger.info("Connected to PostgreSQL at %s", database_url.host)
 
@@ -233,7 +225,6 @@ class PGVectorDBProvider(VectorDBInterface):
             )
         }
         async with engine.begin() as connection:
-            await connection.execute(sqltext("CREATE EXTENSION IF NOT EXISTS vector"))
             await connection.execute(
                 sqltext(
                     f"CREATE TABLE {table_name} ("

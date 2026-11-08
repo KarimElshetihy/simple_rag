@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from src.enums.database_enums import BackendDBEnum
 from src.helpers.config import get_settings
 from src.helpers.metrics import setup_metrics
-from src.routes import base, data, vectors
+from src.routes import base, data, health, vectors
 from src.stores.llm.llm_provider_factory import LLMProviderFactory
 from src.stores.llm.templates.template_parser import TemplateParser
 from src.stores.vectordb.vector_db_provider_factory import VectorDBProviderFactory
@@ -82,4 +82,5 @@ app = FastAPI(lifespan=lifespan)
 app.state.metrics_registry = setup_metrics(app)
 app.include_router(base.base_router)
 app.include_router(data.data_router)
+app.include_router(health.health_router)
 app.include_router(vectors.vectors_router)

@@ -11,6 +11,8 @@ ENV/
 
 # Environment files
 .env
+docker/RAG/env/.env.*
+!docker/RAG/env/.env.*.example
 alembic.ini
 
 # IDEs / editors
