@@ -2,19 +2,18 @@ import logging
 
 from fastapi import APIRouter, Depends, UploadFile, status
 from fastapi.responses import JSONResponse
+from kombu.exceptions import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from ..helpers.db import get_db_session
 from ..helpers.timing import log_async_duration
 from ..application.services.data_service import DataService, FileUploadError
-from ..application.services.document_processing_service import (
-    DocumentProcessingService,
-)
 from ..schemas.process_schemas import ProcessRequest
 from ..enums import ResponseSignal as responseSignal
+from ..infrastructure.celery.tasks import process_project_files
 from ..infrastructure.database.repositories import (
     AssetRepository,
-    ChunkRepository,
     ProjectRepository,
 )
 
@@ -76,32 +75,33 @@ async def upload_file(
 async def process_file(
     project_id: str,
     process_request: ProcessRequest,
-    session: AsyncSession = Depends(get_db_session),
 ):
-    processing_service = DocumentProcessingService(project_id=project_id)
-    async with log_async_duration(
-        "request.process_files", project_id=project_id
-    ):
-        result = await processing_service.process_project_files(
-            project_repository=ProjectRepository(session),
-            asset_repository=AssetRepository(session),
-            chunk_repository=ChunkRepository(session),
-            file_id=process_request.file_id,
-            chunk_size=process_request.chunk_size,
-            overlap_size=process_request.overlap_size,
-            do_reset=process_request.do_reset,
+    try:
+        async with log_async_duration(
+            "request.enqueue_process_files", project_id=project_id
+        ):
+            task = await run_in_threadpool(
+                process_project_files.delay,
+                project_id=project_id,
+                file_id=process_request.file_id,
+                chunk_size=process_request.chunk_size,
+                overlap_size=process_request.overlap_size,
+                do_reset=process_request.do_reset,
+            )
+    except OperationalError:
+        logger.exception(
+            "Failed to enqueue document processing for project %s",
+            project_id,
         )
-    if result.signal != responseSignal.PROCESSING_SUCCESS:
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"message": result.signal.value},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"message": "processing_queue_unavailable"},
         )
 
     return JSONResponse(
-        status_code=status.HTTP_200_OK,
+        status_code=status.HTTP_202_ACCEPTED,
         content={
-            "message": result.signal.value,
-            "inserted_chaunks": result.inserted_chunks,
-            "processed_file": result.processed_files,
+            "message": "processing_queued",
+            "task_id": task.id,
         },
     )

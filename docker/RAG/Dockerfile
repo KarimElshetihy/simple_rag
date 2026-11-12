@@ -29,7 +29,14 @@ ENV DATA_DIR=/app/data \
     TESSERACT_CMD=/usr/bin/tesseract \
     TESSDATA_DIR=/usr/share/tesseract-ocr/5/tessdata
 
-RUN chmod +x /entrypoint.sh && mkdir -p /app/data
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home-dir /app \
+        --no-create-home --shell /usr/sbin/nologin app \
+    && chmod +x /entrypoint.sh \
+    && mkdir -p /app/data \
+    && chown app:app /app/data
+
+USER app:app
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

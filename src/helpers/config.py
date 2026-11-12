@@ -1,5 +1,7 @@
 from typing import Literal
+from urllib.parse import quote
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..enums.database_enums import BackendDBEnum
@@ -18,6 +20,11 @@ class Settings(BaseSettings):
 
     DATABASE_BACKEND: BackendDBEnum = BackendDBEnum.POSTGRES
     POSTGRES_URI: str | None = None
+
+    RABBITMQ_HOST: str = "localhost"
+    RABBITMQ_PORT: int = 5672
+    RABBITMQ_DEFAULT_USER: str = "guest"
+    RABBITMQ_DEFAULT_PASS: SecretStr = SecretStr("guest")
 
     GENERATION_BACKEND: Literal["OPENAI", "COHERE"]
     EMBEDDING_BACKEND: Literal["OPENAI", "COHERE"]
@@ -47,6 +54,18 @@ class Settings(BaseSettings):
 
     PRIMARY_LANG: str = "en"
     DEFAULT_LANG: str = "en"
+
+    @property
+    def celery_broker_url(self) -> str:
+        username = quote(self.RABBITMQ_DEFAULT_USER, safe="")
+        password = quote(
+            self.RABBITMQ_DEFAULT_PASS.get_secret_value(),
+            safe="",
+        )
+        return (
+            f"amqp://{username}:{password}@"
+            f"{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}//"
+        )
 
 
 def get_settings() -> Settings:

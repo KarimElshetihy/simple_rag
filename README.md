@@ -35,6 +35,9 @@ simple-rag/
 │   ├── enums/
 │   ├── helpers/
 │   ├── infrastructure/
+│   │   ├── celery/
+│   │   │   ├── app.py
+│   │   │   └── tasks.py
 │   │   ├── database/repositories/
 │   │   │   ├── asset_repository.py
 │   │   │   ├── chunk_repository.py
@@ -70,6 +73,7 @@ Existing files under `src/assets/` are not migrated automatically.
 | `src/routes/` | HTTP boundary | Request parsing, service calls, response/status mapping |
 | `src/schemas/` | API input validation | Pydantic request schemas |
 | `src/application/services/` | Application workflows | Upload/registration, document processing, vector indexing and RAG |
+| `src/infrastructure/celery/` | Background task queue integration | Celery app configuration and worker task adapters |
 | `src/infrastructure/database/repositories/` | Database persistence | SQLAlchemy queries and writes for projects, assets and chunks |
 | `src/infrastructure/filesystem/` | Local storage support | Runtime upload and vector-store paths |
 | `src/stores/` | External service adapters | LLM and vector database interfaces, factories and providers |
@@ -116,12 +120,7 @@ alembic upgrade head
 uvicorn src.main:app --reload
 ```
 
-## Docker deployment (FastAPI + pgvector)
-
-The main Compose file runs the API, PostgreSQL with pgvector, Nginx, Qdrant,
-Prometheus, Grafana, and node/PostgreSQL exporters. The Celery worker, scheduler,
-Flower, RabbitMQ, and Redis services are not included yet because the repository
-does not currently contain their task-queue application code/configuration.
+## Docker deployment
 
 From the repository root, create any missing environment files from the
 examples. This preserves existing local secrets:
@@ -132,7 +131,9 @@ $envDir = "docker\RAG\env"
   ".env.app",
   ".env.postgres",
   ".env.grafana",
-  ".env.postgres-exporter"
+  ".env.postgres-exporter",
+  ".env.rabbitmq",
+  ".env.flower"
 ) | ForEach-Object {
   $target = Join-Path $envDir $_
   $example = "$target.example"
@@ -162,6 +163,18 @@ services from the repository root:
 docker compose -f docker\docker-compose.yml up --build
 ```
 
+The Compose stack includes FastAPI, PostgreSQL with pgvector, Nginx, Qdrant,
+RabbitMQ, a Celery worker, Flower, Prometheus, Grafana, and node/PostgreSQL
+exporters. RabbitMQ is internal to the Compose network. Flower is available at
+`http://localhost:5555`, protected by `docker/RAG/env/.env.flower`; replace
+example passwords before starting.
+
+The Celery worker processes documents from the shared `/app/data` volume.
+FastAPI, the worker, and Flower run as the unprivileged `app` user (UID 10001).
+The `data-volume-init` service prepares existing volume ownership before the
+API and worker start; see [docker/README.md](./docker/README.md#3-understand-non-root-users-and-upload-volume-ownership)
+for the startup flow and permission checks.
+
 Nginx exposes the API on port 80. Grafana and Prometheus are bound to localhost
 on ports 3000 and 9090; PostgreSQL, Qdrant, and exporters are only available on
 the Compose network. Uploads and database files are persisted in Docker
@@ -182,6 +195,13 @@ curl -X POST "http://localhost:8000/api/v1/data/upload_file/1" \
   -F "file=@/path/to/file.pdf"
 ```
 - Response: JSON with validation message and status.
+- POST `/api/v1/data/process_file/{project_id}`
+  - JSON body: `file_id` (optional), `chunk_size`, `overlap_size`, and
+    `do_reset`.
+  - Returns HTTP `202 Accepted` with a `task_id` after enqueueing document
+    processing. The endpoint does not wait for processing to finish.
+  - Processing failures appear in Flower for now; a user-facing task status
+    endpoint is a later step.
 - Vector search and RAG answer requests require non-blank text up to 4,000
   characters. Their `limit` defaults to 5 and must be between 1 and 20.
 - The file processing and vector indexing requests use a boolean `do_reset`

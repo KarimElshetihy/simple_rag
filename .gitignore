@@ -12,7 +12,9 @@ ENV/
 # Environment files
 .env
 docker/RAG/env/.env.*
-!docker/RAG/env/.env.*.example
+!docker/RAG/env/
+!docker/RAG/env/.env.rabbitmq.example
+!docker/RAG/env/.env.flower.example
 alembic.ini
 
 # IDEs / editors

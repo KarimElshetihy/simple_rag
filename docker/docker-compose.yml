@@ -1,19 +1,42 @@
 name: simple-rag
 
 services:
+  data-volume-init:
+    build:
+      context: ..
+      dockerfile: docker/RAG/Dockerfile
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - >-
+        if [ ! -e /app/data/.ownership-initialized ]; then
+          chown -R 10001:10001 /app/data &&
+          touch /app/data/.ownership-initialized &&
+          chown 10001:10001 /app/data/.ownership-initialized;
+        fi
+    volumes:
+      - fastapi_data:/app/data
+    restart: "no"
+
   fastapi:
     build:
       context: ..
       dockerfile: docker/RAG/Dockerfile
     env_file:
       - ./RAG/env/.env.app
+      - ./RAG/env/.env.rabbitmq
     environment:
       DATA_DIR: /app/data
+      RABBITMQ_HOST: rabbitmq
       TESSERACT_CMD: /usr/bin/tesseract
       TESSDATA_DIR: /usr/share/tesseract-ocr/5/tessdata
     volumes:
       - fastapi_data:/app/data
     depends_on:
+      data-volume-init:
+        condition: service_completed_successfully
       pgvector:
         condition: service_healthy
     networks:
@@ -29,6 +52,85 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  rabbitmq:
+    image: rabbitmq:4.1-alpine
+    env_file:
+      - ./RAG/env/.env.rabbitmq
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmq-diagnostics
+        - -q
+        - ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: docker/RAG/Dockerfile
+    entrypoint:
+      - celery
+    command:
+      - -A
+      - src.infrastructure.celery.app:celery_app
+      - worker
+      - --loglevel=INFO
+      - --concurrency=2
+    env_file:
+      - ./RAG/env/.env.app
+      - ./RAG/env/.env.rabbitmq
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    volumes:
+      - fastapi_data:/app/data
+    depends_on:
+      data-volume-init:
+        condition: service_completed_successfully
+      pgvector:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: ..
+      dockerfile: docker/RAG/Dockerfile
+    entrypoint:
+      - celery
+    command:
+      - -A
+      - src.infrastructure.celery.app:celery_app
+      - flower
+      - --address=0.0.0.0
+      - --port=5555
+    env_file:
+      - ./RAG/env/.env.app
+      - ./RAG/env/.env.rabbitmq
+      - ./RAG/env/.env.flower
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    ports:
+      - "127.0.0.1:5555:5555"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    networks:
+      - backend
+    restart: unless-stopped
 
   nginx:
     image: nginx:1.28.0-alpine
@@ -140,6 +242,7 @@ networks:
 volumes:
   fastapi_data:
   pgvector_data:
+  rabbitmq_data:
   qdrant_data:
   prometheus_data:
   grafana_data:

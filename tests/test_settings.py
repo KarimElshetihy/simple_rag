@@ -37,6 +37,26 @@ class SettingsTests(unittest.TestCase):
                 EMBEDDING_BACKEND="OPENAI",
             )
 
+    def test_celery_broker_url_escapes_rabbitmq_credentials(self):
+        settings = Settings(
+            _env_file=None,
+            APP_NAME="test",
+            APP_VERSION="1",
+            FILE_SUPPORTED_TYPES=["text/plain"],
+            FILE_MAX_SIZE=10,
+            FILE_DEFAULT_CHUNK_SIZE=1024,
+            GENERATION_BACKEND="OPENAI",
+            EMBEDDING_BACKEND="OPENAI",
+            RABBITMQ_HOST="rabbitmq",
+            RABBITMQ_DEFAULT_USER="worker@name",
+            RABBITMQ_DEFAULT_PASS="p@ss:/#word",
+        )
+
+        self.assertEqual(
+            settings.celery_broker_url,
+            "amqp://worker%40name:p%40ss%3A%2F%23word@rabbitmq:5672//",
+        )
+
     def test_retired_dotenv_keys_are_ignored(self):
         settings = Settings(
             _env_file=None,

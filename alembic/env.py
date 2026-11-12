@@ -8,6 +8,7 @@ from src.models.db_schemes.db_rag.schemes.db_rag_base import DB_BASE
 from src.models.db_schemes.db_rag.schemes.project import Project
 from src.models.db_schemes.db_rag.schemes.asset import Asset
 from src.models.db_schemes.db_rag.schemes.chunk import AssetChunk
+from src.models.db_schemes.db_rag.schemes.processing_job import ProcessingJob
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
